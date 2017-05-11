@@ -2,3 +2,4 @@
 *.swp
 *.o
 data/*/*
+__pycache__/*
