@@ -239,7 +239,7 @@ def draw_quiver( pso, obj, fig_name, **kwargs ):
     U = np.array([ p.velocity[0] for p in pso.swarm ])
     V = np.array([ p.velocity[1] for p in pso.swarm ])
     M = np.hypot(U, V)
-    Q = ax.quiver(X, Y, U, V, color='r', units='x', pivot='tail', scale=1)
+    Q = ax.quiver(X, Y, U, V, color='m', units='x', pivot='tip', scale=1)
     
     # Draw scatter
     ax.scatter(X, Y, color='r', s=10)
@@ -342,6 +342,12 @@ class TestSPSO2011:
         print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' % 
               (self.iteration, self.FE, error, self.best_fitness))
         print('position:%s\n' % self.best_position)
+        if self.plot > 0:
+            fig_name = ('F%d_%d.png' % (self.function_id+1, self.iteration) )
+            self.fig_config['fig_title'] = ('F%d, FE=%d, error=%.2e' % 
+                                            (self.function_id+1, self.FE, error) )
+            draw_quiver( self.algo, self.function, fig_name, **self.fig_config )
+
         return None
 
 
@@ -351,7 +357,7 @@ if __name__ == '__main__':
                                 function_id = 1, # F1 ~ F25
                                 max_evaluations = 10000,
                                 verbose=True,
-                                plot = 1,
+                                plot = 1, # number of iterations to draw a figure
                                 fig_dir = 'test_pso'
                                 )
     testSPSO2011.run()
