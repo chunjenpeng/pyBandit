@@ -24,9 +24,16 @@ class Arm:
                         init_positions=trans_positions, 
                         init_fitnesses=init_fitnesses )
 
+
     def transform_obj(self, X):
-        original_X = self.matrix.inverse_transform(X) 
+        original_X = self.matrix.inverse_transform([X])[0]
         return self.obj(original_X)
+
+
+    def pull(self):
+        best_position, best_fitness = self.algo.run() 
+        return self.matrix.inverse_transform([best_position])[0], best_fitness
+
 
     def get_positions(self):
         return self.matrix.inverse_transform( self.algo.get_positions() )
@@ -37,9 +44,6 @@ class Arm:
         self.matrix.update(positions_in, fitnesses, positions_out)
 
 
-    def pull(self):
-        best_position, best_fitness = self.algo.run() 
-        return self.matrix.inverse_transform(best_position), best_fitness
         
     def stop(self):
         return self.algo.stop()
@@ -58,6 +62,8 @@ class Arm:
            ((trans_mean_position < 2.0*margin).any() or (trans_mean_position > 1.0-2.0*margin).any()):
             return True
         return False
+
+
 
 def draw_arms(function_id, arms, **kwargs):
 
@@ -190,6 +196,7 @@ def testArm(plot=False):
 
 
     it = 0
+    should_terminate = False
     arms = []
     for i in range(k):
         indices = np.where(labels==i)[0]
@@ -198,16 +205,21 @@ def testArm(plot=False):
 
     if plot: draw_arms( function_id, arms, fig_name='it_%d.png' % it )
 
-    while True:
+    while not should_terminate:
+        should_terminate = True
         for arm in arms:
             if not arm.stop():
+                should_terminate = False
                 it += 1
+
                 best_position, best_fitness = arm.pull()
+
                 print('Iter', it, best_fitness, best_position)
-            if plot: draw_arms( function_id, arms, fig_name='it_%d.png' % it )
+                if plot: draw_arms( function_id, arms, fig_name='it_%d.png' % it )
+        
 
 
 if __name__ == '__main__':
-    #testArm(plot=True)
-    for i in range(100):
-        testArm()
+    testArm(plot=True)
+    #for i in range(100):
+    #    testArm()

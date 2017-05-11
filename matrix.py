@@ -8,7 +8,7 @@ import numpy as np
 class Matrix:
     def __init__(self, positions):
         self.delta = 1e-08
-        self.matrix = self.init_matrix(positions)
+        self.matrix = self.init_matrix( np.array(positions) )
 
     
     def init_matrix(self, positions):
