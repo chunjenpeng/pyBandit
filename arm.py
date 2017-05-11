@@ -2,7 +2,7 @@ from copy import deepcopy
 from operator import attrgetter
 import numpy as np 
 
-from CMA import CMA
+from CMAES import CMA
 from SPSO2011 import PSO
 from matrix import Matrix
 
@@ -59,10 +59,118 @@ class Arm:
             return True
         return False
 
+def draw_arms(function_id, arms, **kwargs):
+
+    import os
+    from optproblems.cec2005 import CEC2005
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    from boundary import Boundary
+
+    # Parameters
+    dim = 2
+    function = CEC2005(dim)[function_id].objective_function
+    optimal_pos = CEC2005(dim)[function_id].get_optimal_solutions()[0].phenome
+    boundary = Boundary(dim, function_id)
+
+    k = len(arms)
+    inch_size = 4
+    fig_w = k + 1
+    fig_h = 1
+    fig = plt.figure(figsize = (fig_w * inch_size, fig_h * inch_size))
+    cmap = cm.coolwarm
+    scatter_cmap = cm.jet(np.linspace(0.1, 0.9, k))
+    angle = kwargs.get('angle', 240)
+    rotate = kwargs.get('rotate', False)
+    fig_name = kwargs.get('fig_name', None)
+    fig_title = kwargs.get('fig_title', 'F%d'%(function_id+1))
+    fig_dir = kwargs.get('fig_dir', 'test_arms')
+    if not os.path.exists(fig_dir):
+        os.makedirs(fig_dir)
+
+    # Get Mesh Solutions for contour
+    step = (boundary.max_bounds[0] - boundary.min_bounds[0]) / 100
+    X = np.arange(boundary.min_bounds[0], boundary.max_bounds[0] + step, step)
+    Y = np.arange(boundary.min_bounds[1], boundary.max_bounds[1] + step, step)
+    (X, Y) = np.meshgrid(X, Y)
+    positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel()) ]
+    Z = np.array( [ function(position) for position in positions ] )
+
+    # Reset colormap to get rid of extreme colors
+    vmin = min(Z)
+    vmax = max(Z)
+    vmin = vmin - (vmax - vmin) * 0.2
+    vmax = vmax + (vmax - vmin) * 0.2
+    Z = Z.reshape(X.shape)
+
+    # Plot contour
+    ax = fig.add_subplot(fig_h, fig_w, 1)
+    ax.set_xlim([ boundary.min_bounds[0], boundary.max_bounds[0]])
+    ax.set_ylim([ boundary.min_bounds[1], boundary.max_bounds[1]])
+    cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+    fig.colorbar(cset, aspect = 20)
 
 
-def testArm():
-    from plot import draw_arms
+    # Plot scatter points in each arm
+    colors = iter(scatter_cmap)
+    for arm in arms:
+        color = next(colors)
+        positions = arm.get_positions()
+        ax.scatter(positions[:,0], positions[:,1], color = color, marker = 'o', s = 10)
+
+        # Plot borders on original boundary
+        subspace_border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
+        border = arm.matrix.inverse_transform( subspace_border )
+        ax.plot(border[:, 0], border[:, 1], color = color)
+    
+    # Plot optimal solution as a big white 'X'
+    ax.scatter(optimal_pos[0], optimal_pos[1], color = 'w', marker = 'x', s = 100)
+
+
+    # Plot from each arm's perspective
+    for (i, arm) in enumerate(arms):
+
+        color = scatter_cmap[i]
+        ax = fig.add_subplot(fig_h, fig_w, i + 2)
+        ax.set_xlim([ -0.01, 1.01])
+        ax.set_ylim([ -0.01, 1.01])
+
+        # Plot contour
+        (X, Y) = np.meshgrid( np.arange(0, 1.01, 0.01), np.arange(0, 1.01, 0.01) )
+
+        positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel())]
+        original_positions = arm.matrix.inverse_transform(positions)
+
+        Z = np.array( [ function(position) for position in original_positions ] )
+        Z = Z.reshape(X.shape)
+
+        cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+
+
+        # Plot scatter points in each arm
+        trans_X = arm.matrix.transform( arm.get_positions() )
+        ax.scatter(trans_X[:, 0], trans_X[:, 1], color = color, marker = 'o', s = 10)
+
+        # Plot border
+        cord = np.array([ [0, 0], [1, 0], [1, 1], [0, 1]])
+        ax.plot(cord[[0, 1, 2, 3, 0], 0], cord[[0, 1, 2, 3, 0], 1], color = color)
+    
+
+
+
+    fig.tight_layout()
+    st = fig.suptitle(fig_title, fontsize = 16)
+    st.set_y(0.95)
+    fig.subplots_adjust(top = 0.85)
+    if fig_name is not None:
+        plt.savefig( '%s/%s' % (fig_dir,fig_name) )
+    else:
+        plt.show()
+        input('Press Enter to continue...')
+    plt.close(fig)
+
+
+def testArm(plot=False):
     from optproblems.cec2005 import CEC2005
     from sklearn.cluster import KMeans
 
@@ -87,17 +195,19 @@ def testArm():
         indices = np.where(labels==i)[0]
         arms.append( Arm(function, positions[indices], fitnesses[indices]) )
 
-    draw_arms( function_id, arms, fig_name='test_plot/it_%d.png' % it )
+
+    if plot: draw_arms( function_id, arms, fig_name='it_%d.png' % it )
+
     while True:
         for arm in arms:
             if not arm.stop():
                 it += 1
                 best_position, best_fitness = arm.pull()
                 print('Iter', it, best_fitness, best_position)
-            draw_arms( function_id, arms, fig_name='test_plot/it_%d.png' % it )
+            if plot: draw_arms( function_id, arms, fig_name='it_%d.png' % it )
 
 
 if __name__ == '__main__':
-    #testArm()
+    #testArm(plot=True)
     for i in range(100):
         testArm()
