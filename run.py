@@ -1,7 +1,8 @@
 import os, sys, argparse
 from collections import OrderedDict
-from pso_pyswarm import PSO
-from CMA import CMA
+from CMAES import CMA
+from SPSO2011 import PSO
+#from pso_pyswarm import PSO
 from optproblems.cec2005 import CEC2005
 from boundary import Boundary
 import numpy as np
@@ -11,10 +12,13 @@ class Algo:
     def __init__(self, n_points=12, dimension=2, function_id=0, algo_type='CMA', 
                  max_evaluations=1e4, verbose=False, plot=0, fig_dir=None):
 
+        print('\n%s: Solving F%d in %dD with population size %d...\n' % 
+              (algo_type, function_id+1, dimension, n_points))
+
         # Parameters for optproblems
         self.n_points = n_points
         self.dimension = dimension 
-        self.function_id = function_id 
+        self.function_id = function_id
         self.function = CEC2005(dimension)[function_id].objective_function 
         self.max_bounds = Boundary(dimension, function_id).max_bounds
         self.min_bounds = Boundary(dimension, function_id).min_bounds
@@ -42,15 +46,23 @@ class Algo:
                      ])
 
         if algo_type=='PSO':
-            w = 1.0/(2.0*np.log(2))
-            c = 0.5 + np.log(2) 
-            self.algo = PSO( self.obj, self.min_bounds, self.max_bounds, 
-                             swarmsize=self.n_points, omega=w, phip=c, phig=c )
+            self.algo = PSO( self.obj, self.n_points, self.dimension,
+                             min_bounds = self.min_bounds, 
+                             max_bounds = self.max_bounds )
+            # pyswarm.py 
+            #w = 1.0/(2.0*np.log(2))
+            #c = 0.5 + np.log(2) 
+            #self.algo = PSO( self.obj, self.min_bounds, self.max_bounds, 
+            #                 swarmsize=self.n_points, omega=w, phip=c, phig=c )
+
         elif algo_type=='ACOR':
             #TODO
-            self.algo = CMA( self.obj, self.n_points, self.min_bounds, self.max_bounds )
+            #self.algo = ACOR( self.obj, self.n_points, self.min_bounds, self.max_bounds )
+            pass
         else:
-            self.algo = CMA( self.obj, self.n_points, self.min_bounds, self.max_bounds )
+            self.algo = CMA( self.obj, self.n_points, self.dimension,
+                             min_bounds = self.min_bounds, 
+                             max_bounds = self.max_bounds )
 
 
 
@@ -107,8 +119,8 @@ class Algo:
         error = self.best_fitness - self.optimal_fitness
         print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' %
               (self.iteration, self.FE, error, self.best_fitness) )
-        #print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f, position:%s' %
-        #      (self.iteration, self.FE, error, self.best_fitness, self.best_position) )
+        #print('position:', self.best_position) 
+
 
     def stop(self):
         return self.should_terminate
@@ -116,7 +128,6 @@ class Algo:
 
 def main(args):
 
-    print()
     algo = Algo(
                 n_points        = args.population, 
                 dimension       = args.dimension, 
@@ -131,7 +142,7 @@ def main(args):
     while not algo.stop():
         algo.run()
 
-    if not args.verbose: algo.print_status()
+    algo.print_status()
     if args.csv_file: pd.DataFrame(algo.stats).to_csv(args.csv_file, index=False)
     print()
 

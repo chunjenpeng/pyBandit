@@ -29,32 +29,57 @@ class PSO:
         self.n_points = n_points
         self.min_bounds = kwargs.get('min_bounds', np.array([0] * dimension))
         self.max_bounds = kwargs.get('max_bounds', np.array([1] * dimension))
+        # Speed limit for SPSO2006
         #self.max_velocity = np.abs(self.max_bounds - self.min_bounds)
         #self.min_velocity = -(self.max_velocity)
 
+        # Parameters for update
         self.config = kwargs.get('config', 'SPSO2011')
         self.topology = self.random_topology()
         self.w = 1.0 / (2.0 * np.log(2.0))
         self.c = 0.5 + np.log(2.0)
 
+        # Parameters for termiantion
         self.iteration = 0
         self.should_terminate = False
         self.best_fitness = float('Inf')
 
-        self.swarm = []
-        for i in range(n_points):
-            
+
+        # Initialize swarm
+        init_positions = kwargs.get('init_positions', None)
+        init_fitnesses = kwargs.get('init_fitnesses', None)
+        if init_positions is not None and init_fitnesses is not None:
+            assert len(init_fitnesses) == n_points
+            assert len(init_positions) == n_points
+            assert len(init_positions[0]) == dimension
+            self.swarm = []
+            for f, x in zip(init_fitnesses, init_positions):
+                v = [ np.random.uniform(self.min_bounds[d] - x[d], self.max_bounds[d] - x[d]) 
+                      for d in range(self.dimension) ] 
+                self.swarm.append( Particle( f, np.array(x), np.array(v) ) )
+        else:
+            self.swarm = self.init_swarm()
+
+
+
+    def init_swarm(self):
+
+        swarm = []
+
+        for i in range(self.n_points):
             x = [ np.random.uniform(self.min_bounds[d], self.max_bounds[d]) 
-                  for d in range(dimension) ]
+                  for d in range(self.dimension) ]
 
             if self.config == 'SPSO2006':
-                v = [ (np.random.uniform(min_bounds[d], max_bounds[d]) - x[d])/2.0 
-                      for d in range(dimension) ] 
+                v = [ (np.random.uniform(self.min_bounds[d], self.max_bounds[d]) - x[d])/2.0 
+                      for d in range(self.dimension) ] 
             else: #SPSO 2011
                 v = [ np.random.uniform(self.min_bounds[d] - x[d], self.max_bounds[d] - x[d]) 
-                      for d in range(dimension) ] 
+                      for d in range(self.dimension) ] 
 
-            self.swarm.append( Particle(float('Inf'), np.array(x), np.array(v)) )
+            swarm.append( Particle(float('Inf'), np.array(x), np.array(v)) )
+
+        return swarm
 
     
     def ring_topology(self):
@@ -110,7 +135,7 @@ class PSO:
             if p.current.fitness < p.previous_best.fitness:
                 p.previous_best = deepcopy(p.current)
 
-                # Update previous_best in neighborhood
+                # Update best of previous_best in neighborhood
                 if p.previous_best.fitness < p.previous_best_neighbor.fitness:
                     p.previous_best_neighbor = deepcopy(p.previous_best)
                 
@@ -178,6 +203,8 @@ class PSO:
     
     def get_positions(self):
         return [ p.current.position for p in self.swarm ]
+    def get_fitnesses(self):
+        return [ p.current.fitness for p in self.swarm ]
 
 
 
