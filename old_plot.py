@@ -432,9 +432,16 @@ y] for (x, y) in .0 ])(zip(X.ravel(), Y.ravel()))
 
 
 def draw_arms(function_id, arms, **kwargs):
-    k = len(arms)
+
+    # Parameters
     dim = 2
-    func = CEC2005(dim)[function_id]
+    function = CEC2005(dim)[function_id].objective_function
+
+    k = len(arms)
+    inch_size = 4
+    fig_w = k + 1
+    fig_h = 1
+    fig = plt.figure(figsize = (fig_w * inch_size, fig_h * inch_size))
     angle = kwargs.get('angle', 240)
     rotate = kwargs.get('rotate', False)
     fig_name = kwargs.get('fig_name', None)
@@ -442,114 +449,79 @@ def draw_arms(function_id, arms, **kwargs):
     cmap = cm.coolwarm
     scatter_cmap = cm.jet(np.linspace(0.1, 0.9, k))
     boundary = Boundary(dim, function_id)
+
+
+    # Get Mesh Solutions for contour
     step = (boundary.max_bounds[0] - boundary.min_bounds[0]) / 100
     X = np.arange(boundary.min_bounds[0], boundary.max_bounds[0] + step, step)
     Y = np.arange(boundary.min_bounds[1], boundary.max_bounds[1] + step, step)
     (X, Y) = np.meshgrid(X, Y)
-    positions = (lambda .0: continue[ [
-x,
-y] for (x, y) in .0 ])(zip(X.ravel(), Y.ravel()))
-    solutions = (lambda .0: continue[ Individual(position) for position in .0 ])(positions)
-    problem = Problem(func.objective_function)
-    problem.batch_evaluate(solutions)
-    Z = np.array((lambda .0: continue[ solution.objective_values for solution in .0 ])(solutions))
+    positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel()) ]
+    Z = np.array( [ function(position) for position in positions ] )
+
+    # Reset colormap to get rid of extreme colors
     vmin = min(Z)
     vmax = max(Z)
     vmin = vmin - (vmax - vmin) * 0.2
     vmax = vmax + (vmax - vmin) * 0.2
     Z = Z.reshape(X.shape)
-    inch_size = 4
-    fig_w = k + 1
-    fig_h = 1
-    fig = plt.figure(figsize = (fig_w * inch_size, fig_h * inch_size))
+
+    # Plot contour
     ax = fig.add_subplot(fig_h, fig_w, 1)
-    ax.set_xlim([
-        boundary.min_bounds[0],
-        boundary.max_bounds[0]])
-    ax.set_ylim([
-        boundary.min_bounds[1],
-        boundary.max_bounds[1]])
+    ax.set_xlim([ boundary.min_bounds[0], boundary.max_bounds[0]])
+    ax.set_ylim([ boundary.min_bounds[1], boundary.max_bounds[1]])
     cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
     fig.colorbar(cset, aspect = 20)
+
+
+    # Plot scatter points in each arm
     colors = iter(scatter_cmap)
     for arm in arms:
-        cluster = arm.get_positions()
-        matrix = arm.matrix
         color = next(colors)
-        x = cluster[(:, 0)]
-        y = cluster[(:, 1)]
-        ax.scatter(x, y, color = color, marker = 'o', s = 10)
-        border = matrix.inverse_transform(np.array([
-            [
-                0,
-                0],
-            [
-                1,
-                0],
-            [
-                1,
-                1],
-            [
-                0,
-                1],
-            [
-                0,
-                0]]))
-        ax.plot(border[(:, 0)], border[(:, 1)], color = color)
+        positions = arm.get_positions()
+        ax.scatter(positions[:,0], positions[:,1], color = color, marker = 'o', s = 10)
+
+        # Plot borders on original boundary
+        subspace_border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
+        border = arm.matrix.inverse_transform( subspace_border )
+        ax.plot(border[:, 0], border[:, 1], color = color)
     
+    # Plot optimal solution as a big white 'X'
     optimal_pos = func.get_optimal_solutions()[0].phenome
     ax.scatter(optimal_pos[0], optimal_pos[1], color = 'w', marker = 'x', s = 100)
+
+
+    # Plot from each arm's perspective
     for (i, arm) in enumerate(arms):
+
         color = scatter_cmap[i]
-        cluster = arm.get_positions()
-        matrix = arm.matrix
-        X = np.arange(0, 1.01, 0.01)
-        Y = np.arange(0, 1.01, 0.01)
-        (X, Y) = np.meshgrid(X, Y)
-        positions = (lambda .0: continue[ [
-x,
-y] for (x, y) in .0 ])(zip(X.ravel(), Y.ravel()))
-        original_positions = matrix.inverse_transform(positions)
-        solutions = (lambda .0: continue[ Individual(position) for position in .0 ])(original_positions)
-        problem = Problem(func.objective_function)
-        problem.batch_evaluate(solutions)
-        Z = np.array((lambda .0: continue[ solution.objective_values for solution in .0 ])(solutions))
-        Z = Z.reshape(X.shape)
         ax = fig.add_subplot(fig_h, fig_w, i + 2)
-        ax.set_xlim([
-            -0.01,
-            1.01])
-        ax.set_ylim([
-            -0.01,
-            1.01])
+        ax.set_xlim([ -0.01, 1.01])
+        ax.set_ylim([ -0.01, 1.01])
+
+        # Plot contour
+        (X, Y) = np.meshgrid( np.arange(0, 1.01, 0.01), np.arange(0, 1.01, 0.01) )
+
+        positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel())]
+        original_positions = arm.matrix.inverse_transform(positions)
+
+        Z = np.array( [ function(position) for position in original_positions ] )
+        Z = Z.reshape(X.shape)
+
         cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
-        trans_X = matrix.transform(cluster)
+
+
+        # Plot scatter points in each arm
+        trans_X = arm.matrix.transform( arm.get_positions() )
         ax.scatter(trans_X[(:, 0)], trans_X[(:, 1)], color = color, marker = 'o', s = 10)
-        cord = np.array([
-            [
-                0,
-                0],
-            [
-                1,
-                0],
-            [
-                1,
-                1],
-            [
-                0,
-                1]])
-        ax.plot(cord[([
-            0,
-            1,
-            2,
-            3,
-            0], 0)], cord[([
-            0,
-            1,
-            2,
-            3,
-            0], 1)], color = color)
+
+        # Plot border
+        cord = np.array([ [0, 0], [1, 0], [1, 1], [0, 1]])
+        ax.plot(cord[[0, 1, 2, 3, 0], 0], cord[[0, 1, 2, 3, 0], 1], color = color)
     
+
+
+
     fig.tight_layout()
     st = fig.suptitle(fig_title, fontsize = 16)
     st.set_y(0.95)
@@ -560,6 +532,7 @@ y] for (x, y) in .0 ])(zip(X.ravel(), Y.ravel()))
         plt.show()
         input('Press Enter to continue...')
     plt.close(fig)
+
 
 if __name__ == '__main__':
     nPoints = 40
