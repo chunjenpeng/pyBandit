@@ -2,6 +2,7 @@ import os, sys, argparse
 from collections import OrderedDict
 from CMAES import CMA
 from SPSO2011 import PSO
+from acor import ACOR
 #from pso_pyswarm import PSO
 from optproblems.cec2005 import CEC2005
 from boundary import Boundary
@@ -56,14 +57,18 @@ class Algo:
             #                 swarmsize=self.n_points, omega=w, phip=c, phig=c )
 
         elif algo_type=='ACOR':
-            #TODO
-            #self.algo = ACOR( self.obj, self.n_points, self.min_bounds, self.max_bounds )
-            pass
+            self.algo = ACOR(self.obj, self.dimension, 
+                             min_bounds = self.min_bounds, 
+                             max_bounds = self.max_bounds,
+                             ants_num = 2,
+                             archive_size = self.n_points,
+                             q = 0.3, #1e-4, 0.1, 0.3, 0.5, 0.9
+                             xi = 0.85
+                            )
         else:
             self.algo = CMA( self.obj, self.n_points, self.dimension,
                              min_bounds = self.min_bounds, 
                              max_bounds = self.max_bounds )
-
 
 
     def obj(self, x):
@@ -84,15 +89,12 @@ class Algo:
         return fitness
 
 
-
     def run(self):
-
         try:
             best_position, best_fitness = self.algo.run() 
         except Exception as e:
             print(e)
             return
-
 
         # Update best individual data
         if best_fitness < self.best_fitness:
@@ -101,8 +103,6 @@ class Algo:
 
         if self.algo.stop():
             self.should_terminate = True
-
-
 
         # Update statistics
         self.iteration += 1
@@ -124,6 +124,7 @@ class Algo:
 
     def stop(self):
         return self.should_terminate
+
 
 
 def main(args):
