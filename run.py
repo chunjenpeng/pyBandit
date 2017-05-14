@@ -61,8 +61,8 @@ class Algo:
                              min_bounds = self.min_bounds, 
                              max_bounds = self.max_bounds,
                              ants_num = 2,
-                             archive_size = self.n_points,
-                             q = 0.3, #1e-4, 0.1, 0.3, 0.5, 0.9
+                             archive_size = self.n_points, # 50
+                             q = 1e-4, #1e-4, 0.1, 0.3, 0.5, 0.9
                              xi = 0.85
                             )
         else:
@@ -94,6 +94,7 @@ class Algo:
             best_position, best_fitness = self.algo.run() 
         except Exception as e:
             print(e)
+            self.should_terminate = True
             return
 
         # Update best individual data

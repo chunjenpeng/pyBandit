@@ -18,25 +18,16 @@ class ACOR:
         # ACOR Parameters
         # number of ants
         self.n_ants = kwargs.get('ants_num', 2)
-
         # size of solution archive may not be smaller than the number of dimensions 
         k = kwargs.get('archive_size', 50)
         self.k = max( self.dimension, k ) 
         assert self.k > 1 # need to divide (self.k-1) later
-
         # parameter q (adjusting balance between iteration-best and best-so-far)
         self.q = kwargs.get('q', 1e-4)
-
         # standard deviation
         self.qk = self.q * self.k
         # parameter xi (similar to pheromone evaporation rate in ACO)
         self.xi = kwargs.get('xi', 0.85)
-
-
-        # Parameters for termiantion
-        self.iteration = 0
-        self.converge_error = 1e-6
-        self.should_terminate = False
 
 
         # Initialize archive 
@@ -69,6 +60,13 @@ class ACOR:
         self.custom = rv_discrete( values=( np.arange(self.k), p[:] ) )
 
 
+        # Parameters for termiantion
+        self.iteration = 0
+        self.converge_error = 1e-8
+        self.should_terminate = False
+
+
+
     def run(self):
         self.iteration += 1
 
@@ -80,21 +78,22 @@ class ACOR:
             selected = self.custom.rvs()
             sigma = self.xi / (self.k-1) * \
                     np.sum( np.abs(self.archive[:,:-1] - self.archive[selected, :-1]), axis=0 )
-            #        np.sum( np.abs(self.archive - self.archive[selected]), axis=0 )
             assert (sigma >= 0).all()
             if max(sigma) < self.converge_error:
                 self.should_terminate = True
+                message = ('ACOR converges: std in all dimensions < %.2e' % self.converge_error)
+                raise Exception(message)
+
 
             new_position = np.zeros(self.dimension)
             for i in range(self.dimension):
-                #new_position = sigma[i] * np.random.random_sample() + self.archive[selected][i]
                 new_position[i] = np.random.normal( self.archive[selected][i], sigma[i] )
-
                 # Check if new_position is within boundary
                 new_position[i] = min(new_position[i], self.max_bounds[i])
                 new_position[i] = max(new_position[i], self.min_bounds[i])
 
             new_fitness = self.obj(new_position)
+
             new_archive[k,:-1] = new_position
             new_archive[k,-1] = new_fitness
 
@@ -106,27 +105,14 @@ class ACOR:
         # Keep only top k solutions
         self.archive = self.archive[:self.k][:]
 
-
         best_position, best_fitness = self.archive[0,:-1], self.archive[0,-1]
         return (best_position, best_fitness)
-
     
-    def print_status(self):
-        for i in range(self.n_points):
-            print('Particle', i, ' neighbors:', self.topology[i])
-            particle = self.swarm[i]
-            x = particle.current.position
-            p = particle.previous_best.position
-            l = particle.previous_best_neighbor.position
-            print('x:', x, particle.current.fitness)
-            print('p:', p, particle.previous_best.fitness)
-            print('l:', l, particle.previous_best_neighbor.fitness)
-            print()
-        
+
 
     def stop(self):
-        if self.should_terminate:
-            print('ACOR converges: std in all dimensions < %.2e' % self.converge_error )
+        #if self.should_terminate:
+        #    print('ACOR converges: std in all dimensions < %.2e' % self.converge_error )
         return self.should_terminate
 
     def get_positions(self):
@@ -136,8 +122,6 @@ class ACOR:
         return self.archive[:, -1]
     
     
-
-
 
 def draw_quiver( aco, obj, fig_name, **kwargs ):
 

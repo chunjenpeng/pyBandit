@@ -35,9 +35,10 @@ class PSO:
 
         # Parameters for update
         self.config = kwargs.get('config', 'SPSO2011')
-        self.topology = self.random_topology()
+        self.topology = self.random_topology(K=3)
         self.w = 1.0 / (2.0 * np.log(2.0))
         self.c = 0.5 + np.log(2.0)
+
 
         # Parameters for termiantion
         self.iteration = 0
@@ -381,10 +382,10 @@ class TestSPSO2011:
 if __name__ == '__main__':
     testSPSO2011 = TestSPSO2011(n_points = 12, 
                                 dimension = 2,
-                                function_id = 1, # F1 ~ F25
+                                function_id = 2, # F1 ~ F25
                                 max_evaluations = 10000,
                                 verbose=True,
-                                plot = 1, # number of iterations to draw a figure
+                                plot = 0, # number of iterations to draw a figure
                                 fig_dir = 'test_pso'
                                 )
     testSPSO2011.run()
