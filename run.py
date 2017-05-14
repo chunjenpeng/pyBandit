@@ -1,13 +1,16 @@
 import os, sys, argparse
 from collections import OrderedDict
+
 from CMAES import CMA
 from SPSO2011 import PSO
-from acor import ACOR
 #from pso_pyswarm import PSO
+from ACOR import ACOR
 from optproblems.cec2005 import CEC2005
 from boundary import Boundary
+
 import numpy as np
 import pandas as pd
+
 
 class Algo:
     def __init__(self, n_points=12, dimension=2, function_id=0, algo_type='CMA', 
