@@ -61,9 +61,6 @@ class Matrix:
         return trans_positions
 
     
-    def update(self, positions_in, fitnesses, positions_out):
-        pass
-
 
 if __name__ == '__main__':
 
