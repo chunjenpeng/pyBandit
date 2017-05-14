@@ -18,10 +18,11 @@ class ACOR:
         # ACOR Parameters
         # number of ants
         self.n_ants = kwargs.get('ants_num', 2)
-        # size of solution archive may not be smaller than the number of dimensions 
+        # size of solution archive should  not be smaller than the number of dimensions 
         k = kwargs.get('archive_size', 50)
         self.k = max( self.dimension, k ) 
         assert self.k > 1 # need to divide (self.k-1) later
+
         # parameter q (adjusting balance between iteration-best and best-so-far)
         self.q = kwargs.get('q', 1e-4)
         # standard deviation
@@ -81,8 +82,6 @@ class ACOR:
             assert (sigma >= 0).all()
             if max(sigma) < self.converge_error:
                 self.should_terminate = True
-                message = ('ACOR converges: std in all dimensions < %.2e' % self.converge_error)
-                raise Exception(message)
 
 
             new_position = np.zeros(self.dimension)
@@ -106,13 +105,14 @@ class ACOR:
         self.archive = self.archive[:self.k][:]
 
         best_position, best_fitness = self.archive[0,:-1], self.archive[0,-1]
+
+        if self.should_terminate:
+            print('ACOR converges: std in all dimensions < %.2e' % self.converge_error )
         return (best_position, best_fitness)
     
 
 
     def stop(self):
-        #if self.should_terminate:
-        #    print('ACOR converges: std in all dimensions < %.2e' % self.converge_error )
         return self.should_terminate
 
     def get_positions(self):
