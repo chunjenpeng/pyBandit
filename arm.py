@@ -5,7 +5,7 @@ import numpy as np
 
 from CMAES import CMA
 from SPSO2011 import PSO
-from acor import ACOR
+from ACOR import ACOR
 from matrix import Matrix
 
 
@@ -19,6 +19,7 @@ class Arm:
         trans_positions = self.matrix.transform(init_positions) 
         assert (trans_positions.all() <= 1)
         assert (trans_positions.all() >= 0)
+
         n_points = len(init_fitnesses)
         dimension = len(trans_positions[0])
 
@@ -80,16 +81,20 @@ class Arm:
 
         # Repeatedly used parameters in evaluate
         self.original_positions_out = positions_out
-        self.original_positions_in  = self.get_positions()
+        self.original_positions_in  = deepcopy( self.get_positions() )
         self.original_best_position = self.original_positions_in[best_index] 
 
         solution = self.matrix.matrix.ravel()
-        res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000)
+        res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000, disp=0)
         x_best = res[0]
+
         self.matrix.matrix = np.array(x_best).reshape( self.matrix.matrix.shape )
 
+        error = self.evaluate(x_best, debug=True)
+        return error
 
-    def evaluate(self, X):
+
+    def evaluate(self, X, debug=False):
         self.matrix.matrix = np.array(X).reshape( self.matrix.matrix.shape )
 
         trans_best = self.matrix.transform([self.original_best_position])[0]
@@ -97,6 +102,7 @@ class Arm:
         trans_out  = self.matrix.transform(self.original_positions_out)
         trans_out  = trans_out[ np.all( trans_out >= 0, axis=1) ]
         trans_out  = trans_out[ np.all( trans_out <= 1, axis=1) ]
+        
 
         # Features to be minimized
         dist_best_to_center = np.linalg.norm( trans_best - 0.5 )
@@ -109,23 +115,37 @@ class Arm:
         dist_should_be_out  = abs(sum( trans_out[ lower_half ] ))
         dist_should_be_out += abs(sum( trans_out[ upper_half ] - 0.5 ))
 
+        #reconstruct = self.matrix.inverse_transform(trans_in)
+        reconstruct = self.get_positions()
+        reconstruct_error = sum( np.linalg.norm( p1 - p2 ) \
+                                 for p1, p2 in zip(reconstruct, self.original_positions_in) )
+
 
         score  = 0.0
         score += dist_best_to_center
         score += dist_should_be_in 
         score += dist_should_be_out
+        score += reconstruct_error
 
-        if False:
-            print('trans_out:\n', trans_out)
-            print('trans_in:\n', trans_in)
-            print('trans_best:\n', trans_best)
-            print('dist_in  :', dist_should_be_in)
-            print('dist_out :', dist_should_be_out)
-            print('dist_best:', dist_best_to_center)
-            print('score    :', score)
-            input()
+        if not debug:
+            return score 
 
-        return score 
+        else:
+            #print('trans_out:\n', trans_out)
+            #print('trans_in:\n', trans_in)
+            #print('trans_best:\n', trans_best)
+            #print('original:\n', self.original_positions_in)
+            #print('reconstruct:\n', reconstruct)
+            if reconstruct_error > 1:
+                print('dist_in  :', dist_should_be_in)
+                print('dist_out :', dist_should_be_out)
+                print('dist_best:', dist_best_to_center)
+                print('error    :', reconstruct_error)
+                print('score    :', score)
+                print()
+                #input()
+            return reconstruct_error
+
 
         
 
@@ -157,6 +177,9 @@ def draw_arms(function_id, arms, **kwargs):
     fig_dir = kwargs.get('fig_dir', 'test_arms')
     if not os.path.exists(fig_dir):
         os.makedirs(fig_dir)
+
+    print('ploting %s...' % fig_name)
+
 
     # Get Mesh Solutions for contour
     step = (boundary.max_bounds[0] - boundary.min_bounds[0]) / 100
@@ -244,11 +267,11 @@ def testArm(plot=False):
     from sklearn.cluster import KMeans
     from boundary import Boundary
 
-    function_id = 0
+    function_id = 8 
     dimension = 2 
     n_points = 120
     n_sample = 100
-    k = 3
+    k = 6
     function = CEC2005(dimension)[function_id].objective_function
     init_min_bounds = Boundary(dimension, function_id).init_min_bounds
     init_max_bounds = Boundary(dimension, function_id).init_max_bounds
@@ -271,10 +294,9 @@ def testArm(plot=False):
         indices = np.where(labels==i)[0]
         arms.append( Arm(function, positions[indices], fitnesses[indices], algo_type='CMA') )
 
-    print('ploting...')
     if plot: draw_arms( function_id, arms, fig_name='initialize.png' )
 
-    print('sampling...')
+
     original_samples = np.zeros((k, n_sample, dimension))
     test_arms = []
     for i in range(k):
@@ -282,8 +304,7 @@ def testArm(plot=False):
         original_samples[i] = arms[i].matrix.inverse_transform( trans_samples )
         test_arms.append( Arm(function, original_samples[i], np.zeros(n_sample), algo_type='CMA') )
 
-    print('ploting...')
-    if plot: draw_arms( function_id, test_arms, fig_name='samples.png' )
+    #if plot: draw_arms( function_id, test_arms, fig_name='samples.png' )
 
 
     for i in range(k):
@@ -297,17 +318,19 @@ def testArm(plot=False):
                 positions_out.extend( original_samples[j] )
 
         positions_out = np.array(positions_out)
-        arms[i].update_matrix(positions_out)
+        error = arms[i].update_matrix(positions_out)
+        
         opt_arms[i].matrix = arms[i].matrix
         test_arms[i].matrix = arms[i].matrix
 
-        print('ploting...')
-        if plot: draw_arms( function_id, opt_arms, fig_name='optimize_%d.png'%i )
+        if error > 1:
+            if plot: draw_arms( function_id, opt_arms, fig_name='optimize_%d.png'%i )
+
+    if plot: draw_arms( function_id, arms, fig_name='optimized.png' )
 
 
-
-
-
+    best_fitness = np.inf
+    best_position = None
 
     while not should_terminate:
         should_terminate = True
@@ -316,15 +339,20 @@ def testArm(plot=False):
                 should_terminate = False
                 it += 1
 
-                best_position, best_fitness = arm.pull()
+                position, fitness = arm.pull()
+                if fitness < best_fitness:
+                    best_position, best_fitness = position, fitness
 
-                print('Iter', it, best_fitness, best_position)
+                #print('Iter', it, best_fitness, best_position)
                 if plot: draw_arms( function_id, arms, fig_name='it_%d.png' % it )
+
+    print('Iter', it, best_fitness, best_position)
+    #draw_arms( function_id, arms, fig_name='it_%d.png' % it )
         
 
 
 if __name__ == '__main__':
     #testArm()
-    testArm(plot=True)
-    #for i in range(100):
-    #    testArm()
+    #testArm(plot=True)
+    for i in range(100):
+        testArm()
