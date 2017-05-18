@@ -68,8 +68,12 @@ if __name__ == '__main__':
     n_points = 5 
     X = np.random.uniform(-100, 100, size = (n_points, dimension))
     m = Matrix(X)
+    m.matrix = np.random.uniform(-100, 100, size = (dimension+1, dimension+1) )
+
     print('\nTransformation Matrix:')
     print(m.matrix)
+    print('\nInverse Matrix:')
+    print(np.linalg.inv(m.matrix))
 
     print('\noriginal points:')
     print(X)
