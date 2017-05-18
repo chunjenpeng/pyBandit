@@ -4,9 +4,9 @@ import numpy as np
 class Combination:
     
     def __init__(self, f_left, n_clusters, n_points, clusters_ranks, **kwargs):
-        self.f_left = f_left
-        self.n_clusters = n_clusters
-        self.n_points = n_points
+        self.f_left = int(f_left)
+        self.n_clusters = int(n_clusters)
+        self.n_points = int(n_points)
         self.model = kwargs.get('model', 'linear')
         self.verbose= kwargs.get('verbose', False)
         self.combination = self.calc_combination(clusters_ranks)
@@ -26,7 +26,7 @@ class Combination:
         Min = self.f_left + ranks[-1]
         Max = 2 * self.f_left + self.n_points
 
-        Arm['vector'] = np.array([ self.CDF(float(x)) for x in range(Min, Max + 1) ])
+        Arm['vector'] = np.array([ self.CDF(x) for x in range(Min, Max + 1) ])
         Arm['nModels'] = float(self.f_left + (self.n_points + 1 - ranks[-1])) \
                                * (self.f_left + ranks[0])
         Arm['nOnes'] = Arm['nModels'] - Max + 1 - Min
@@ -46,7 +46,7 @@ class Combination:
         V = [ A[i]['vector'] for i in range(self.n_clusters) ]
         cache = np.ones((self.n_clusters, 2))
 
-        '''
+        #'''
         bug = False
         for i in range(self.n_clusters):
             if A[i]['nModels'] <= 0:
@@ -62,7 +62,7 @@ class Combination:
                 print('nModels:', A[i]['nModels'])
                 print('nOnes:', A[i]['nOnes'])
             raise Exception('Bug in combination.py, nModel <= 0')
-        '''
+        #'''
 
         for i in range(self.n_clusters):
             cache[i, 1] = float(np.sum(V[i]) + A[i]['nOnes']) / A[i]['nModels']
