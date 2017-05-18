@@ -27,6 +27,7 @@ class Bandit:
         self.init_max_bounds = kwargs.get('init_max_bounds', np.array([1.]*dimension) )
         self.algo_type = kwargs.get('algo_type', 'CMA')
         self.verbose = kwargs.get('verbose', False)
+        self.plot = kwargs.get('plot', 0)
         self.fig_config = kwargs.get('fig_config', None)
 
         # Parameters for Bandit arms
@@ -44,8 +45,7 @@ class Bandit:
         self.init_bandit(init_n_points, population_step)
 
         # Calculate f allocation
-        self.remain_f_allocation = Combination(self.f_left, len(self.arms), 
-                                               self.n_points, self.get_ranks()).combination
+        self.remain_f_allocation = np.zeros(len(self.arms))
 
 
 
@@ -61,7 +61,7 @@ class Bandit:
 
         if best_arm is not None:
             best_position, best_fitness = self.arms[best_arm].pull()
-            self.remain_f_allocation -= self.n_points
+            self.remain_f_allocation[best_arm] -= self.n_points
 
             if best_fitness < self.best_fitness:
                 self.best_fitness = best_fitness
@@ -69,7 +69,8 @@ class Bandit:
 
             # Check if need to recluster
             if self.arms[best_arm].reached_border():
-                self.arms[best_arm].translate_to(best_position)
+                if self.verbose: print('\nRecluster due to arm %d reached border'%best_arm)
+                #self.arms[best_arm].translate_to(best_position)
                 self.recluster()
 
         return self.best_position, self.best_fitness
@@ -90,14 +91,16 @@ class Bandit:
         if self.stop():
             return None
 
-        c = Combination(self.f_left, len(arms), self.n_points, self.get_ranks())
-        self.remain_f_allocation += c.combination
-        best_arm = argmax(self.remain_f_allocation)
+        c = Combination(self.f_left, len(self.arms), self.n_points, self.get_ranks())
+        self.remain_f_allocation = self.remain_f_allocation + c.combination
+        best_arm = np.argmax(self.remain_f_allocation)
+        if self.verbose:
+            print(c.combination, self.remain_f_allocation, 'Choose arm %d'%best_arm )
 
         # If best_arm stops, set allocation=-inf and choose again
         while self.arms[best_arm].stop():
             self.remain_f_allocation[best_arm] = -np.inf
-            best_arm = argmax(self.remain_f_allocation)
+            best_arm = np.argmax(self.remain_f_allocation)
 
         return best_arm
 
@@ -144,7 +147,9 @@ class Bandit:
 
         # Esitmate number of clusters with silhouette_score
         k = self.estimate_k_clusters(selected_positions, self.max_arms_num)
-        print('k:', k, 'pop:', len(selected_positions))
+        if self.verbose:
+            print('Estimating number of clusters...')
+            print('k:', k, 'population:', len(selected_positions))
 
 
         # Increase population until k == last_k
@@ -159,7 +164,7 @@ class Bandit:
             
             selected_positions, selected_fitnesses = self.selection( positions, fitnesses )
             k = self.estimate_k_clusters(selected_positions, self.max_arms_num)
-            print('k:', k, 'pop:', len(selected_positions))
+            if self.verbose: print('k:', k, 'population:', len(selected_positions))
 
 
         # Update best_fitness and best_position
@@ -184,7 +189,7 @@ class Bandit:
         # Default matrix that translate and shrink search space to [0,1]^D 
         matrices = [ Matrix(positions) for positions in cluster_positions ]
 
-        if DEBUG: 
+        if self.plot > 0: 
             draw_arms( function_id, cluster_positions, matrices, 
                        fig_name='initialize.png', **self.fig_config )
         
@@ -213,7 +218,7 @@ class Bandit:
             matrices[i] = self.arms[i].matrix
 
 
-            if DEBUG: 
+            if self.plot > 0: 
                 opt_points = []
                 for j in range(k):
                     if i == j:
@@ -225,7 +230,7 @@ class Bandit:
                            fig_name='optimize_%d.png'%i,  **self.fig_config )
 
 
-        if DEBUG: 
+        if self.plot > 0: 
             opt_points = [ arm.get_positions() for arm in self.arms ]
             opt_matrices = [ arm.matrix for arm in self.arms ]
             draw_arms( function_id, opt_points, opt_matrices,
@@ -290,17 +295,23 @@ class Bandit:
     #    Bandit Recluster   #
     #########################
 
-    def recluster( self, max_n_clusters ):
+    def recluster( self ):
 
         positions, fitnesses = [], []
         for arm in self.arms:
             positions.extend( arm.get_positions() )
             fitnesses.extend( arm.get_fitnesses() )
 
+        positions, fitnesses = np.array(positions), np.array(fitnesses)
+
+
         # Estimate number of clusters with cluster number < current cluster number 
-        k = self.estimate_n_clusters( positions, len(self.arms) )
+        k = self.estimate_k_clusters( positions, len(self.arms) )
+        if self.verbose:
+            print('Estimating number of clusters...')
+            print('k:', k, 'population:', len(positions))
         # Recluster using KMeans
-        cluster_positions, cluster_fitnessses = self.k_means(k, positions, fitnesses)
+        cluster_positions, cluster_fitnesses = self.k_means(k, positions, fitnesses)
 
 
         # Compare ranks to find unchanged arms
@@ -396,6 +407,7 @@ class TestBandit:
                             verbose = verbose,
                             max_evaluations =self.max_evaluations,
                             max_arms_num = 10,
+                            plot = plot,
                             fig_config = self.fig_config
                            )
 
@@ -431,12 +443,14 @@ class TestBandit:
         while not self.algo.stop():
             self.iteration += 1
             
+            (self.best_position, self.best_fitness) = self.algo.run()
+            '''
             try:
                 (self.best_position, self.best_fitness) = self.algo.run()
             except Exception as e:
                 print(e)
                 break
-
+            '''
 
             if self.verbose:
                 error = self.best_fitness - self.optimal_fitness
@@ -468,16 +482,19 @@ class TestBandit:
 
 
 if __name__ == '__main__':
-    DEBUG = False 
-    function_id = int(sys.argv[1])
+    if len(sys.argv) == 2:
+        function_id = int(sys.argv[1])
+    else:
+        function_id = 1 
+
     testBandit = TestBandit( n_points = 6,
                              dimension = 2,
-                             function_id = function_id+1, # F1 ~ F25
+                             function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
                              algo_type = 'CMA', # 'CMA', 'PSO', 'ACOR'
-                             #verbose = True,
+                             verbose = True,
                              plot = 0,
-                             fig_dir = 'test_initialization/F%d'%(function_id+1)
+                             fig_dir = 'test_bandit/F%d'%function_id
                             )
-    #testBandit.run()
+    testBandit.run()
 

@@ -21,12 +21,14 @@ class Arm:
         self.min_bounds = kwargs.get('min_bounds', np.array([0.0] * self.dimension))
         self.max_bounds = kwargs.get('max_bounds', np.array([1.0] * self.dimension))
 
-        best_index = np.argmin( init_fitnesses )
-        best_position = init_positions[best_index] 
-
         self.matrix = Matrix(init_positions)
         self.evaluation_num = 0
-        self.max_evaluation_num = 10000
+        self.max_evaluation_num = 10
+
+
+        # Optimize transformation matrix
+        best_index = np.argmin( init_fitnesses )
+        best_position = init_positions[best_index] 
         self.update_matrix(best_position, init_positions, exclude)
         
         # Resize population == n_points
@@ -34,6 +36,7 @@ class Arm:
 
         # Transform points onto subspace
         trans_positions = self.matrix.transform(positions) 
+
         # Check boundary is in 0, 1
         trans_positions = np.clip( trans_positions, 0, 1 )
 
@@ -152,12 +155,12 @@ class Arm:
 
         best_solution = self.matrix.matrix.ravel()
         best_score = self.evaluate( best_solution )
-        print( 'Init score:', self.evaluate(best_solution, debug=True) )
+        #print( 'Init score:', self.evaluate(best_solution, debug=True) )
 
         self.evaluation_num = 0
         while self.evaluation_num < self.max_evaluation_num:
             solution = best_solution + np.random.uniform( 0, 1e-6, size=best_solution.shape )
-            print( 'Init score:', self.evaluate(solution) )
+            #print( 'Init score:', self.evaluate(solution) )
 
             res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000, disp=0)
             #res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000 )
@@ -166,7 +169,7 @@ class Arm:
             if score < best_score:
                 best_score = score
                 best_solution = x_best
-            print( 'Final score:', score) 
+            #print( 'Final score:', score) 
 
         '''
         import cma
@@ -179,7 +182,7 @@ class Arm:
 
 
         self.matrix.matrix = np.array(best_solution).reshape( self.matrix.matrix.shape )
-        print( 'Final score:', self.evaluate(best_solution, debug=True) )
+        #print( 'Final score:', self.evaluate(best_solution, debug=True) )
 
 
     def evaluate(self, X, debug=False):
