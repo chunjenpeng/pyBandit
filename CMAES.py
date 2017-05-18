@@ -33,8 +33,8 @@ class CMA:
             assert len(init_positions) == n_points
             assert len(init_positions[0]) == dimension
 
-            self.positions = init_positions
-            self.fitnesses = init_fitnesses
+            self.positions = np.array(init_positions)
+            self.fitnesses = np.array(init_fitnesses)
             _ = self.es.ask()
             self.es.tell(self.positions.tolist(), self.fitnesses.tolist())
         else:
@@ -42,7 +42,13 @@ class CMA:
     
 
     def run(self):
-        self.positions = self.es.ask()
+        try:
+            self.positions = self.es.ask()
+        except AssertionError:
+            print(self.positions)
+            input()
+
+        #self.positions = self.es.ask()
         self.fitnesses = [ self.obj(p) for p in self.positions ]
         self.es.tell(self.positions, self.fitnesses)
         index, best_fitness = max( enumerate(self.fitnesses), key = itemgetter(1) )
