@@ -64,6 +64,7 @@ class Bandit:
         if best_arm is not None:
             best_position, best_fitness = self.arms[best_arm].pull()
             self.remain_f_allocation[best_arm] -= self.n_points
+            #self.remain_f_allocation[best_arm] = 0
 
             if best_fitness < self.best_fitness:
                 self.best_fitness = best_fitness
@@ -72,7 +73,11 @@ class Bandit:
             # Check if need to recluster
             if self.arms[best_arm].reached_border():
                 if self.verbose: print('\nRecluster due to arm %d reached border'%best_arm)
-                #self.arms[best_arm].translate_to(best_position)
+                ps = self.arms[best_arm].get_positions()
+                fs = self.arms[best_arm].get_fitnesses()
+                best_p = ps[ np.argmin(fs) ]
+                #assert (best_p == best_position).all()
+                self.arms[best_arm].translate_to(best_p)
                 self.recluster()
                 self.remain_f_allocation = np.zeros( len(self.arms) )
 
@@ -193,8 +198,8 @@ class Bandit:
         # Default matrix that translate and shrink search space to [0,1]^D 
         matrices = [ Matrix(positions) for positions in cluster_positions ]
 
-        #if self.plot > 0: 
-        if DEBUG:
+        if self.plot > 0: 
+        #if DEBUG:
             draw_arms( function_id-1, cluster_positions, matrices, 
                        fig_name='initial.png', **self.fig_config )
         
@@ -235,8 +240,8 @@ class Bandit:
                            fig_name='initial_optimize_%d.png'%i,  **self.fig_config )
 
 
-        #if self.plot > 0: 
-        if DEBUG:
+        if self.plot > 0: 
+        #if DEBUG:
             opt_points = [ arm.get_positions() for arm in self.arms ]
             opt_matrices = [ arm.matrix for arm in self.arms ]
             draw_arms( function_id-1, opt_points, opt_matrices,
@@ -340,14 +345,14 @@ class Bandit:
                     break
         
 
-        #if self.plot > 0: 
-        if DEBUG:
+        if self.plot > 0: 
+        #if DEBUG:
             opt_points = [ arm.get_positions() for arm in self.arms ]
             opt_matrices = [ arm.matrix for arm in self.arms ]
             draw_arms( function_id-1, opt_points, opt_matrices,
-                       fig_name='it%d_before_recluster.png'%self.iteration, **self.fig_config )
+                       fig_name='it%d_recluster_0.png'%self.iteration, **self.fig_config )
             draw_arms( function_id-1, cluster_positions, matrices, 
-                       fig_name='it%d_after_recluster.png'%self.iteration, **self.fig_config )
+                       fig_name='it%d_recluster_1.png'%self.iteration, **self.fig_config )
         
 
         new_arms = []
@@ -383,12 +388,12 @@ class Bandit:
         self.arms = new_arms
 
 
-        #if self.plot > 0: 
-        if DEBUG:
+        if self.plot > 0: 
+        #if DEBUG:
             opt_points = [ arm.get_positions() for arm in self.arms ]
             opt_matrices = [ arm.matrix for arm in self.arms ]
             draw_arms( function_id-1, opt_points, opt_matrices,
-                       fig_name='it%d_optimized_recluster.png'%self.iteration, **self.fig_config )
+                       fig_name='it%d_recluster_2.png'%self.iteration, **self.fig_config )
 
 
 
@@ -451,10 +456,13 @@ class TestBandit:
     
         if self.plot > 0:
             error = self.best_fitness-self.optimal_fitness
-            fig_name = ('F%d_%d.png' % (self.function_id+1, self.iteration) )
+            #fig_name = ('F%d_%d.png' % (self.function_id+1, self.iteration) )
             self.fig_config['fig_title'] = ('F%d, FE=%d, error=%.2e' % 
                                             (self.function_id+1, self.FE, error) )
-            #draw_arms( self.function_id, self.function, fig_name, **self.fig_config )
+            opt_points = [ arm.get_positions() for arm in self.algo.arms ]
+            opt_matrices = [ arm.matrix for arm in self.algo.arms ]
+            draw_arms( self.function_id, opt_points, opt_matrices,
+                       fig_name='it%d.png'%self.iteration, **self.fig_config )
 
 
 
@@ -480,14 +488,14 @@ class TestBandit:
         while not self.algo.stop():
             self.iteration += 1
             
-            (self.best_position, self.best_fitness) = self.algo.run()
-            '''
+            #(self.best_position, self.best_fitness) = self.algo.run()
+            #'''
             try:
                 (self.best_position, self.best_fitness) = self.algo.run()
             except Exception as e:
                 print(e)
                 break
-            '''
+            #'''
 
             if self.verbose:
                 error = self.best_fitness - self.optimal_fitness
@@ -497,10 +505,13 @@ class TestBandit:
                 
             if self.plot > 0 and self.iteration % self.plot == 0:
                 error = self.best_fitness-self.optimal_fitness
-                fig_name = ('F%d_%d.png' % (self.function_id+1, self.iteration) )
+                #fig_name = ('F%d_%d.png' % (self.function_id+1, self.iteration) )
                 self.fig_config['fig_title'] = ('F%d, FE=%d, error=%.2e' % 
                                                 (self.function_id+1, self.FE, error) )
-                #draw_quiver( self.algo, self.function, fig_name, **self.fig_config )
+                opt_points = [ arm.get_positions() for arm in self.algo.arms ]
+                opt_matrices = [ arm.matrix for arm in self.algo.arms ]
+                draw_arms( self.function_id, opt_points, opt_matrices,
+                           fig_name='it%d.png'%self.iteration, **self.fig_config )
 
 
         error = self.best_fitness - self.optimal_fitness
@@ -512,7 +523,10 @@ class TestBandit:
             fig_name = ('F%d_%d.png' % (self.function_id+1, self.iteration) )
             self.fig_config['fig_title'] = ('F%d, FE=%d, error=%.2e' % 
                                             (self.function_id+1, self.FE, error) )
-            #draw_quiver( self.algo, self.function, fig_name, **self.fig_config )
+            opt_points = [ arm.get_positions() for arm in self.algo.arms ]
+            opt_matrices = [ arm.matrix for arm in self.algo.arms ]
+            draw_arms( self.function_id, opt_points, opt_matrices,
+                       fig_name='it%d.png'%self.iteration, **self.fig_config )
 
         return None
 
@@ -524,15 +538,15 @@ if __name__ == '__main__':
     else:
         function_id = 1 # F1 ~ F25
 
-    DEBUG = True 
-    testBandit = TestBandit( n_points = 6,
+    DEBUG = False 
+    testBandit = TestBandit( n_points = 50,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'CMA', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
-                             plot = 0,
-                             fig_dir = 'test_bandit/F%d'%function_id
+                             plot = 1,
+                             fig_dir = 'test_bandit_ACOR/F%d'%function_id
                             )
     testBandit.run()
 

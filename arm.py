@@ -23,7 +23,7 @@ class Arm:
 
         self.matrix = Matrix(init_positions)
         self.evaluation_num = 0
-        self.max_evaluation_num = 10
+        self.max_evaluation_num = 0
 
 
         # Optimize transformation matrix
@@ -107,6 +107,8 @@ class Arm:
 
         if ((trans_best_position < margin).any() or (trans_best_position > 1.0-margin).any()) and \
            ((trans_mean_position < 2.0*margin).any() or (trans_mean_position > 1.0-2.0*margin).any()):
+            print(trans_mean_position)
+            print(trans_positions)
             return True
         return False
 
@@ -117,18 +119,15 @@ class Arm:
         fitnesses = self.get_fitnesses()
 
         center = self.matrix.inverse_transform( [[0.5]*self.dimension] )[0]
-        translate = original_best_position - center
+
+        translate = center - original_best_position 
         translate_matrix = np.eye( self.dimension + 1 ) 
-        print(translate)
-        translate_matrix[0:-1, -1] = -translate.T
-        print(translate_matrix)
-        print(self.matrix.matrix)
+        translate_matrix[:-1, -1] = translate.T
 
         self.matrix.matrix = np.dot( self.matrix.matrix, translate_matrix )
 
         trans_positions = self.matrix.transform(positions) 
-        print(trans_positions)
-        print(fitnesses)
+        trans_positions = np.clip( trans_positions, 0, 1 )
         assert (trans_positions.all() >= 0) and (trans_positions.all() <= 1)
 
         self.init_algo( trans_positions, fitnesses )
@@ -288,7 +287,8 @@ def draw_arms(function_id, cluster_positions, matrices, **kwargs):
 
     k = len(matrices)
     inch_size = 4
-    fig_w = k + 1
+    #fig_w = k + 1
+    fig_w = 1.2
     fig_h = 1
     fig = plt.figure(figsize = (fig_w * inch_size, fig_h * inch_size))
     cmap = cm.coolwarm
@@ -341,7 +341,7 @@ def draw_arms(function_id, cluster_positions, matrices, **kwargs):
     # Plot optimal solution as a big white 'X'
     ax.scatter(optimal_pos[0], optimal_pos[1], color = 'w', marker = 'x', s = 100)
 
-
+    '''
     # Plot from each arm's perspective
     for i, (positions, matrix) in enumerate(zip(cluster_positions, matrices)):
 
@@ -369,7 +369,7 @@ def draw_arms(function_id, cluster_positions, matrices, **kwargs):
         # Plot border
         cord = np.array([ [0, 0], [1, 0], [1, 1], [0, 1]])
         ax.plot(cord[[0, 1, 2, 3, 0], 0], cord[[0, 1, 2, 3, 0], 1], color = color)
-    
+    ''' 
 
     fig.tight_layout()
     st = fig.suptitle(fig_title, fontsize = 16)
@@ -391,7 +391,8 @@ def testArm(plot=False):
 
     function_id = 11 
     dimension = 2 
-    n_points = 120
+    n_points = 6 
+    init_num_points = 120
     n_sample = 100 * dimension
     k = 4
     function = CEC2005(dimension)[function_id].objective_function
@@ -402,11 +403,11 @@ def testArm(plot=False):
 
     init_positions = np.random.uniform(init_min_bounds[0], 
                                        init_max_bounds[0], 
-                                       size=(n_points, dimension))
+                                       size=(init_num_points, dimension))
     init_fitnesses = np.array([function(p) for p in init_positions])
 
     index = init_fitnesses.argsort()
-    selected = index[:int(n_points/2)]
+    selected = index[:int(init_num_points/2)]
     positions, fitnesses = init_positions[selected], init_fitnesses[selected]
     labels = KMeans( n_clusters=k ).fit_predict(positions)
 
@@ -431,32 +432,40 @@ def testArm(plot=False):
     opt_matrices = deepcopy( matrices )
     trans_samples = np.random.uniform(0, 1, size=(n_sample, dimension))
     for i in range(k):
-        positions_out = []
+        exclude = []
         opt_points = []
         for j in range(k):
             if i == j: 
                 opt_points.append(cluster_positions[i])
             else:
-                #positions_out.extend( cluster_positions[j] )
+                #exclude.extend( cluster_positions[j] )
                 samples = matrices[j].inverse_transform( trans_samples )
-                positions_out.extend( samples )
+                exclude.extend( samples )
                 opt_points.append(samples)
 
-        positions_out = np.array(positions_out)
-        arms.append( Arm(function, cluster_positions[i], cluster_fitnesses[i], 
-                     algo_type='CMA', exclude=positions_out, 
-                     min_bounds = min_bounds, max_bounds = max_bounds) )
+        exclude = np.array(exclude)
+        arm = Arm( function,
+                   n_points,
+                   cluster_positions[i],
+                   cluster_fitnesses[i],
+                   algo_type='CMA',
+                   exclude = exclude,
+                   min_bounds = min_bounds,
+                   max_bounds = max_bounds
+                  )
+        arms.append(arm)
 
         opt_points[i] = arms[i].get_positions() 
         opt_matrices[i] = arms[i].matrix
 
-        if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimize_%d.png'%i )
+        #if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimize_%d.png'%i )
 
     opt_points = [ arm.get_positions() for arm in arms ]
     opt_matrices = [ arm.matrix for arm in arms ]
     if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimized.png' )
 
-    '''
+
+    #'''
     best_fitness = np.inf
     best_position = None
 
@@ -472,16 +481,33 @@ def testArm(plot=False):
                     best_position, best_fitness = position, fitness
 
                 # TODO
-                #if arm.reached_border():
-                #    draw_arms( function_id, arms, fig_name='it_%d.png' % it )
-                #    arm.translate_to( position )
+                if arm.reached_border():
+                    if plot: 
+                        draw_arms( function_id, 
+                                   [ arm.get_positions() for arm in arms ],
+                                   [ arm.matrix for arm in arms ],
+                                   fig_name='it_%d_before_recluster.png' % it )
 
+                    positions = arm.get_positions()
+                    fitnesses = arm.get_fitnesses()
+                    best_position = positions[ np.argmin(fitnesses) ]
+                    arm.translate_to( best_position )
+
+                    if plot: 
+                        draw_arms( function_id, 
+                                   [ arm.get_positions() for arm in arms ],
+                                   [ arm.matrix for arm in arms ],
+                                   fig_name='it_%d.png' % it )
                 #print('Iter', it, best_fitness, best_position)
-                if plot: draw_arms( function_id, arms, fig_name='it_%d.png' % it )
+
 
     print('Iter', it, best_fitness, best_position)
-    draw_arms( function_id, arms, fig_name='it_%d.png' % it )
-    '''
+    if plot: 
+        draw_arms( function_id, 
+                   [ arm.get_positions() for arm in arms ],
+                   [ arm.matrix for arm in arms ],
+                   fig_name='it_%d.png' % it )
+    #'''
 
 if __name__ == '__main__':
     #testArm()
