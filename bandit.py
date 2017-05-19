@@ -35,6 +35,7 @@ class Bandit:
         self.max_arms_num = min(self.n_points, kwargs.get('max_arms_num', 10) )
         self.max_evaluations = kwargs.get('max_evaluations', 1e4*dimension )
         self.f_left = self.max_evaluations
+        self.iteration = 0
 
         # Initialize Bandit
         self.n_samples = 50 * dimension
@@ -56,6 +57,7 @@ class Bandit:
 
 
     def run(self):
+        self.iteration += 1
 
         best_arm = self.find_best_arm() 
 
@@ -72,6 +74,8 @@ class Bandit:
                 if self.verbose: print('\nRecluster due to arm %d reached border'%best_arm)
                 #self.arms[best_arm].translate_to(best_position)
                 self.recluster()
+                self.remain_f_allocation = np.zeros( len(self.arms) )
+
 
         return self.best_position, self.best_fitness
 
@@ -189,9 +193,10 @@ class Bandit:
         # Default matrix that translate and shrink search space to [0,1]^D 
         matrices = [ Matrix(positions) for positions in cluster_positions ]
 
-        if self.plot > 0: 
-            draw_arms( function_id, cluster_positions, matrices, 
-                       fig_name='initialize.png', **self.fig_config )
+        #if self.plot > 0: 
+        if DEBUG:
+            draw_arms( function_id-1, cluster_positions, matrices, 
+                       fig_name='initial.png', **self.fig_config )
         
 
         # Random sample n_samples to represent search space for non-overlapped optimization
@@ -226,15 +231,16 @@ class Bandit:
                     else:
                         samples = matrices[j].inverse_transform( trans_samples )
                         opt_points.append(samples)
-                draw_arms( function_id, opt_points, matrices, 
-                           fig_name='optimize_%d.png'%i,  **self.fig_config )
+                draw_arms( function_id-1, opt_points, matrices, 
+                           fig_name='initial_optimize_%d.png'%i,  **self.fig_config )
 
 
-        if self.plot > 0: 
+        #if self.plot > 0: 
+        if DEBUG:
             opt_points = [ arm.get_positions() for arm in self.arms ]
             opt_matrices = [ arm.matrix for arm in self.arms ]
-            draw_arms( function_id, opt_points, opt_matrices,
-                       fig_name='optimized.png',  **self.fig_config )
+            draw_arms( function_id-1, opt_points, opt_matrices,
+                       fig_name='initial_optimized.png',  **self.fig_config )
 
 
     def init_population(self, n_points):
@@ -307,52 +313,83 @@ class Bandit:
 
         # Estimate number of clusters with cluster number < current cluster number 
         k = self.estimate_k_clusters( positions, len(self.arms) )
-        if self.verbose:
-            print('Estimating number of clusters...')
-            print('k:', k, 'population:', len(positions))
+        if self.verbose: print('Estimate %d clusters with population %d...' % (k, len(positions)))
+
         # Recluster using KMeans
         cluster_positions, cluster_fitnesses = self.k_means(k, positions, fitnesses)
+        assert k == len(cluster_positions)
+        assert k == len(cluster_fitnesses)
 
 
         # Compare ranks to find unchanged arms
-        old_ranks = self.get_ranks()
-        new_ranks = self.get_ranks(cluster_fitnesses)
+        matrices = [ Matrix(positions) for positions in cluster_positions ]
+        unchanged_arms = {}
 
-        unchanged_arms = [i for i, ranks in enumerate(new_ranks) if ranks in old_ranks] 
-        if self.verbose: print('unchanged_arms:%r' % unchanged_arms)
+        old_arms_ranks = self.get_ranks()
+        new_arms_ranks = self.get_ranks(cluster_fitnesses)
+        print('old ranks:\n', old_arms_ranks)
+        print('new ranks:\n', new_arms_ranks)
 
-        '''
-        new_arms = []
-        for index, arm in enumerate(self.arms):
-
+        # Copy unchanged matrix to new matrices 
+        for new_index, new_ranks in enumerate(new_arms_ranks):
+            for old_index, old_ranks in enumerate(old_arms_ranks):
+                if set(old_ranks) == set(new_ranks):
+                    matrices[new_index] = deepcopy(self.arms[old_index].matrix)
+                    unchanged_arms[new_index] = old_index
+                    if self.verbose: print('unchanged_arms: %d -> %d' % (old_index, new_index))
+                    break
         
 
-        new_algos = []
-        for index, cluster in enumerate(new_clusters):
-            if index in unchanged_clusters:
+        #if self.plot > 0: 
+        if DEBUG:
+            opt_points = [ arm.get_positions() for arm in self.arms ]
+            opt_matrices = [ arm.matrix for arm in self.arms ]
+            draw_arms( function_id-1, opt_points, opt_matrices,
+                       fig_name='it%d_before_recluster.png'%self.iteration, **self.fig_config )
+            draw_arms( function_id-1, cluster_positions, matrices, 
+                       fig_name='it%d_after_recluster.png'%self.iteration, **self.fig_config )
+        
 
-                for old_index, cluster in enumerate(self.clusters):
-                    if all( x in new_ranks[index] for x in cluster.ranks):
-                        new_clusters[index] = copy.deepcopy(self.clusters[old_index])
-                        new_algos.append(copy.deepcopy(self.algos[old_index]))
-                        break
+        new_arms = []
+        trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
+        for i in range(k):
 
+            # Copy unchanged arm to new arms
+            if i in unchanged_arms:
+                #new_arms.append( deepcopy(self.arms[ unchanged_arms[i] ]) )
+                new_arms.append( self.arms[ unchanged_arms[i] ] )
+
+            # Create new arm
             else:
-                if self.algo_type == 'CMA':
-                    new_algos.append( CMAEvolutionStrategy( [0.5]*self.dimension, 0.2, 
-                                                            {'popsize': self.n_points, 
-                                                             'bounds': [ 0, 1 ] } ) )
-                    init_positions = new_algos[index].ask()
+                exclude = []
+                for j in range(k):
+                    if i != j :
+                        samples = matrices[j].inverse_transform( trans_samples )
+                        exclude.extend(samples)
 
-            
-        self.clusters = new_clusters
-        self.algos = new_algos
-        #for i in range( len(self.clusters) ):
-        #    if i not in unchanged_clusters:
-        #        self.update_matrix(i)
+                exclude = np.array(exclude)
+                arm = Arm( self.obj, 
+                           self.n_points,
+                           cluster_positions[i],
+                           cluster_fitnesses[i],
+                           algo_type = self.algo_type,
+                           exclude = exclude,
+                           min_bounds = self.min_bounds,
+                           max_bounds = self.max_bounds
+                          )
+                new_arms.append(arm)
+                matrices[i] = new_arms[i].matrix
 
-        #self.update_borders()
-        '''
+        self.arms = new_arms
+
+
+        #if self.plot > 0: 
+        if DEBUG:
+            opt_points = [ arm.get_positions() for arm in self.arms ]
+            opt_matrices = [ arm.matrix for arm in self.arms ]
+            draw_arms( function_id-1, opt_points, opt_matrices,
+                       fig_name='it%d_optimized_recluster.png'%self.iteration, **self.fig_config )
+
 
 
 
@@ -485,8 +522,9 @@ if __name__ == '__main__':
     if len(sys.argv) == 2:
         function_id = int(sys.argv[1])
     else:
-        function_id = 1 
+        function_id = 1 # F1 ~ F25
 
+    DEBUG = True 
     testBandit = TestBandit( n_points = 6,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
