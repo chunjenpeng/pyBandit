@@ -7,7 +7,7 @@ class Combination:
         self.f_left = int(f_left)
         self.n_clusters = int(n_clusters)
         self.n_points = int(n_points)
-        self.model = kwargs.get('model', 'linear')
+        self.model = kwargs.get('model', 'uniform')
         self.verbose= kwargs.get('verbose', False)
         self.combination = self.calc_combination(clusters_ranks)
 
@@ -83,14 +83,14 @@ class Combination:
         if self.verbose:
             print( 'calc_combination:', *combination, sep=' | ', end=' | \n')
 
-        return combination
+        return np.array(combination)
 
 
 if __name__ == '__main__':
-    f_left = 20000
+    f_left = 100
     n_clusters = 2
-    n_points = 3
-    clusters_ranks = [ [1, 3], [2] ]
+    n_points = 12 
+    clusters_ranks = [ [1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12] ]
     combination = Combination(f_left, 
                               n_clusters,
                               n_points,
