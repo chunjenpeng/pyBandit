@@ -51,7 +51,7 @@ class CMA:
         #self.positions = self.es.ask()
         self.fitnesses = [ self.obj(p) for p in self.positions ]
         self.es.tell(self.positions, self.fitnesses)
-        index, best_fitness = max( enumerate(self.fitnesses), key = itemgetter(1) )
+        index, best_fitness = min( enumerate(self.fitnesses), key = itemgetter(1) )
         if self.es.stop():
             print('CMA-ES converges!')
         return self.positions[index], best_fitness
