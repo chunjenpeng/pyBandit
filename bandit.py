@@ -1,6 +1,7 @@
 import sys
 from operator import attrgetter
 from copy import deepcopy
+from sklearn.preprocessing import normalize
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from scipy.stats import rankdata
@@ -38,10 +39,10 @@ class Bandit:
         self.iteration = 0
 
         # Initialize Bandit
-        self.n_samples = 50 * dimension
-        init_n_points = max(50*dimension, self.n_points*self.max_arms_num) 
+        self.n_samples = 100 * dimension
+        init_n_points = max(100*dimension, self.n_points*self.max_arms_num) 
         #init_n_points = self.n_points*self.max_arms_num
-        population_step = 20 
+        population_step = int(init_n_points/5)
 
         self.init_bandit(init_n_points, population_step)
 
@@ -63,8 +64,8 @@ class Bandit:
 
         if best_arm is not None:
             best_position, best_fitness = self.arms[best_arm].pull()
-            self.remain_f_allocation[best_arm] -= self.n_points
-            #self.remain_f_allocation[best_arm] = 0
+            self.remain_f_allocation[best_arm] -= 1.0
+            #self.remain_f_allocation[best_arm] -= self.n_points
 
             if best_fitness < self.best_fitness:
                 self.best_fitness = best_fitness
@@ -73,13 +74,52 @@ class Bandit:
             # Check if need to recluster
             if self.arms[best_arm].reached_border():
                 if self.verbose: print('\nRecluster due to arm %d reached border'%best_arm)
-                ps = self.arms[best_arm].get_positions()
-                fs = self.arms[best_arm].get_fitnesses()
-                best_p = ps[ np.argmin(fs) ]
-                #assert (best_p == best_position).all()
-                self.arms[best_arm].translate_to(best_p)
+
+                original_positions = deepcopy( self.arms[best_arm].get_positions() )
+                original_fitnesses = self.arms[best_arm].get_fitnesses()
+                current_best = original_positions[ np.argmin(original_fitnesses) ]
+                assert max(abs(current_best - best_position)) < 1e-6
+
+                # Translate and optimize matrix
+                self.arms[best_arm].translate_to(current_best)
+                #if DEBUG:
+                if self.plot > 0: 
+                    draw_arms( function_id-1, 
+                               [ arm.get_positions() for arm in self.arms ],
+                               [ arm.matrix for arm in self.arms ],
+                               fig_name='it%d_recluster_0.png'% (self.iteration-1), 
+                               **self.fig_config )
+
+
+                trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
+                exclude = []
+                for i, arm in enumerate(self.arms):
+                    if i != best_arm:
+                        exclude.extend( arm.matrix.inverse_transform( trans_samples ) )
+                        
+                self.arms[best_arm].update_matrix( current_best, 
+                                                   original_positions,
+                                                   exclude )
+                #if DEBUG:
+                if self.plot > 0: 
+                    draw_arms( function_id-1, 
+                               [ arm.get_positions() for arm in self.arms ],
+                               [ arm.matrix for arm in self.arms ],
+                               fig_name='it%d_recluster_1.png'% (self.iteration-1), 
+                               **self.fig_config )
+
+
+                # Recluster
                 self.recluster()
                 self.remain_f_allocation = np.zeros( len(self.arms) )
+                #if DEBUG:
+                if self.plot > 0: 
+                    draw_arms( function_id-1, 
+                               [ arm.get_positions() for arm in self.arms ],
+                               [ arm.matrix for arm in self.arms ],
+                               fig_name='it%d_recluster_2.png'% (self.iteration-1), 
+                               **self.fig_config )
+
 
 
         return self.best_position, self.best_fitness
@@ -101,10 +141,14 @@ class Bandit:
             return None
 
         c = Combination(self.f_left, len(self.arms), self.n_points, self.get_ranks())
-        self.remain_f_allocation = self.remain_f_allocation + c.combination
+        new_ratio = c.combination / sum(c.combination)
+        self.remain_f_allocation = self.remain_f_allocation + new_ratio
         best_arm = np.argmax(self.remain_f_allocation)
         if self.verbose:
-            print(c.combination, self.remain_f_allocation, 'Choose arm %d'%best_arm )
+            print(c.combination)
+            print(new_ratio)
+            print(self.remain_f_allocation)
+            print('Choose arm %d' % best_arm)
 
         # If best_arm stops, set allocation=-inf and choose again
         while self.arms[best_arm].stop():
@@ -339,20 +383,10 @@ class Bandit:
         for new_index, new_ranks in enumerate(new_arms_ranks):
             for old_index, old_ranks in enumerate(old_arms_ranks):
                 if set(old_ranks) == set(new_ranks):
-                    matrices[new_index] = deepcopy(self.arms[old_index].matrix)
+                    matrices[new_index].matrix = deepcopy(self.arms[old_index].matrix.matrix)
                     unchanged_arms[new_index] = old_index
                     if self.verbose: print('unchanged_arms: %d -> %d' % (old_index, new_index))
                     break
-        
-
-        if self.plot > 0: 
-        #if DEBUG:
-            opt_points = [ arm.get_positions() for arm in self.arms ]
-            opt_matrices = [ arm.matrix for arm in self.arms ]
-            draw_arms( function_id-1, opt_points, opt_matrices,
-                       fig_name='it%d_recluster_0.png'%self.iteration, **self.fig_config )
-            draw_arms( function_id-1, cluster_positions, matrices, 
-                       fig_name='it%d_recluster_1.png'%self.iteration, **self.fig_config )
         
 
         new_arms = []
@@ -386,15 +420,6 @@ class Bandit:
                 matrices[i] = new_arms[i].matrix
 
         self.arms = new_arms
-
-
-        if self.plot > 0: 
-        #if DEBUG:
-            opt_points = [ arm.get_positions() for arm in self.arms ]
-            opt_matrices = [ arm.matrix for arm in self.arms ]
-            draw_arms( function_id-1, opt_points, opt_matrices,
-                       fig_name='it%d_recluster_2.png'%self.iteration, **self.fig_config )
-
 
 
 
@@ -488,14 +513,11 @@ class TestBandit:
         while not self.algo.stop():
             self.iteration += 1
             
-            #(self.best_position, self.best_fitness) = self.algo.run()
-            #'''
             try:
                 (self.best_position, self.best_fitness) = self.algo.run()
             except Exception as e:
                 print(e)
                 break
-            #'''
 
             if self.verbose:
                 error = self.best_fitness - self.optimal_fitness
@@ -533,20 +555,25 @@ class TestBandit:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 2:
+
+    function_id = 1 # F1 ~ F25
+    fig_dir = 'test_bandit_1' 
+
+    if len(sys.argv) == 3:
         function_id = int(sys.argv[1])
-    else:
-        function_id = 1 # F1 ~ F25
+        fig_dir = sys.argv[2]
+    elif len(sys.argv) == 2:
+        function_id = int(sys.argv[1])
 
     DEBUG = False 
-    testBandit = TestBandit( n_points = 50,
+    testBandit = TestBandit( n_points = 12,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
                              plot = 1,
-                             fig_dir = 'test_bandit_ACOR/F%d'%function_id
+                             fig_dir = '%s/F%d' % (fig_dir, function_id)
                             )
     testBandit.run()
 

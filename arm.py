@@ -23,7 +23,7 @@ class Arm:
 
         self.matrix = Matrix(init_positions)
         self.evaluation_num = 0
-        self.max_evaluation_num = 0
+        self.max_evaluation_num = 10000
 
 
         # Optimize transformation matrix
@@ -107,8 +107,6 @@ class Arm:
 
         if ((trans_best_position < margin).any() or (trans_best_position > 1.0-margin).any()) and \
            ((trans_mean_position < 2.0*margin).any() or (trans_mean_position > 1.0-2.0*margin).any()):
-            print(trans_mean_position)
-            print(trans_positions)
             return True
         return False
 
@@ -156,11 +154,12 @@ class Arm:
         best_score = self.evaluate( best_solution )
         #print( 'Init score:', self.evaluate(best_solution, debug=True) )
 
+
+        #'''
         self.evaluation_num = 0
         while self.evaluation_num < self.max_evaluation_num:
-            solution = best_solution + np.random.uniform( 0, 1e-6, size=best_solution.shape )
+            solution = best_solution + np.random.uniform( -1e-3, 1e-3, size=best_solution.shape )
             #print( 'Init score:', self.evaluate(solution) )
-
             res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000, disp=0)
             #res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000 )
             x_best = res[0]
@@ -171,13 +170,21 @@ class Arm:
             #print( 'Final score:', score) 
 
         '''
+
         import cma
-        es = cma.CMAEvolutionStrategy( solution.tolist(), 0.5, {'maxiter': 1000} )
+        es = cma.CMAEvolutionStrategy( best_solution.tolist(), 0.0005, 
+                                       {'maxiter': self.max_evaluation_num} )
         while not es.stop():
             solutions = es.ask()
             es.tell( solutions, [self.evaluate(s) for s in solutions] )
             x_best = es.result()[0]
-        '''
+            score = self.evaluate( x_best )
+            if score < best_score:
+                best_score = score
+                best_solution = x_best
+            #print( 'Final score:', score) 
+        #'''
+
 
 
         self.matrix.matrix = np.array(best_solution).reshape( self.matrix.matrix.shape )
@@ -191,20 +198,22 @@ class Arm:
         trans_best = self.matrix.transform([self.original_best_position])[0]
         
         trans_in   = self.matrix.transform(self.original_positions_in)
-        #trans_in  = trans_out[ np.all( trans_out > 1.0, axis=1) ]
-        #trans_in  = trans_out[ np.all( trans_out < 0.0, axis=1) ]
 
         trans_out  = self.matrix.transform(self.original_positions_out)
-        #trans_out  = trans_out[ np.all( trans_out >= 0, axis=1) ]
-        #trans_out  = trans_out[ np.all( trans_out <= 1, axis=1) ]
+        trans_out  = trans_out[ np.all( trans_out >= 0, axis=1) ]
+        trans_out  = trans_out[ np.all( trans_out <= 1, axis=1) ]
+
 
         ori_samples = self.matrix.inverse_transform(self.samples)
+
         out_min_bounds = self.min_bounds - ori_samples
         out_min_bounds = out_min_bounds[ out_min_bounds > 0 ]
         dist_out_min_bounds = sum( out_min_bounds )
+
         out_max_bounds = ori_samples - self.max_bounds
         out_max_bounds = out_max_bounds[ out_max_bounds > 0 ]
         dist_out_max_bounds = sum( out_max_bounds )
+
 
         # Features to be minimized
         dist_best_to_center = np.linalg.norm( trans_best - 0.5 )
@@ -223,26 +232,24 @@ class Arm:
         reconstruct_error = sum( np.linalg.norm( p1 - p2 ) \
                                  for p1, p2 in zip(reconstruct, self.original_positions_in) )
 
+        trans_std = np.std( (trans_in - trans_best), axis=0 )
+        dist_std = sum( abs(trans_std - 0.3) ) 
+        
 
         score  = 0.0
-        score += dist_best_to_center
+        score += 100*reconstruct_error 
+        # Limit in global boundary
         score += dist_should_be_in 
+        score += dist_should_be_out 
+        # Split point in and out of cluster
         score += dist_out_min_bounds
         score += dist_out_max_bounds
-        score += dist_should_be_out 
-        score += 10*reconstruct_error 
-        '''
+        # Approximate a Normal distribution centering at trans_best
         score += dist_best_to_center
-        if len(trans_in):
-            score += dist_should_be_in / len(trans_in) 
-            score += reconstruct_error / len(trans_in)
-        if len(trans_out):
-            score += dist_should_be_out / len(trans_out)
-        ''' 
+        score += dist_std
 
         if not debug:
             return score 
-
         else:
             #print('trans_out:\n', trans_out)
             #print('trans_in:\n', trans_in)
@@ -256,14 +263,16 @@ class Arm:
                 print('dist_max :', dist_out_max_bounds)
                 print('dist_out :', dist_should_be_out)
                 print('dist_best:', dist_best_to_center)
+                print('std      :', trans_std)
+                print('dist_std :', dist_std)
                 print('error    :', reconstruct_error)
                 print('score    :', score)
-                print(self.matrix.matrix)
+                #print(self.matrix.matrix)
                 subspace_border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1] ])
                 border = self.matrix.inverse_transform( subspace_border )
-                print(subspace_border)
-                print(border)
-                print()
+                #print(subspace_border)
+                #print(border)
+                #print()
             return score 
             #return reconstruct_error
 
@@ -439,7 +448,7 @@ def testArm(plot=False):
                 opt_points.append(cluster_positions[i])
             else:
                 #exclude.extend( cluster_positions[j] )
-                samples = matrices[j].inverse_transform( trans_samples )
+                samples = opt_matrices[j].inverse_transform( trans_samples )
                 exclude.extend( samples )
                 opt_points.append(samples)
 
@@ -458,7 +467,7 @@ def testArm(plot=False):
         opt_points[i] = arms[i].get_positions() 
         opt_matrices[i] = arms[i].matrix
 
-        #if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimize_%d.png'%i )
+        if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimize_%d.png'%i )
 
     opt_points = [ arm.get_positions() for arm in arms ]
     opt_matrices = [ arm.matrix for arm in arms ]
@@ -471,7 +480,7 @@ def testArm(plot=False):
 
     while not should_terminate:
         should_terminate = True
-        for arm in arms:
+        for i, arm in enumerate(arms):
             if not arm.stop():
                 should_terminate = False
                 it += 1
@@ -486,18 +495,49 @@ def testArm(plot=False):
                         draw_arms( function_id, 
                                    [ arm.get_positions() for arm in arms ],
                                    [ arm.matrix for arm in arms ],
-                                   fig_name='it_%d_before_recluster.png' % it )
+                                   fig_name='it_%d_before_translate.png' % it )
 
+                    ######################################################
+                    '''
                     positions = arm.get_positions()
                     fitnesses = arm.get_fitnesses()
-                    best_position = positions[ np.argmin(fitnesses) ]
-                    arm.translate_to( best_position )
+                    best = positions[ np.argmin(fitnesses) ]
+                    if not (position == best).all():
+                        print(fitness, position)
+                        print(np.amin(fitnesses), best)
+                        print()
+                        for f, p in zip(fitnesses, positions):
+                            print(f, p)
+                        input()
+                    '''
+                    ######################################################
+                    
+                    arm.translate_to( position )
 
                     if plot: 
                         draw_arms( function_id, 
                                    [ arm.get_positions() for arm in arms ],
                                    [ arm.matrix for arm in arms ],
-                                   fig_name='it_%d.png' % it )
+                                   fig_name='it_%d_after_translate.png' % it )
+
+
+                    exclude = []
+                    for j in range(len(arms)):
+                        if j != i: 
+                            samples = opt_matrices[j].inverse_transform( trans_samples )
+                            exclude.extend( samples )
+
+                    # Optimize transformation matrix
+                    arm.update_matrix(position, arm.get_positions(), exclude)
+
+                    if plot: 
+                        draw_arms( function_id, 
+                                   [ arm.get_positions() for arm in arms ],
+                                   [ arm.matrix for arm in arms ],
+                                   fig_name='it_%d_optimized_translate.png' % it )
+
+
+
                 #print('Iter', it, best_fitness, best_position)
 
 
