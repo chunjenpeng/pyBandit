@@ -3,7 +3,6 @@ from collections import OrderedDict
 
 from CMAES import CMA
 from SPSO2011 import PSO
-#from pso_pyswarm import PSO
 from ACOR import ACOR
 from optproblems.cec2005 import CEC2005
 from boundary import Boundary
@@ -49,16 +48,11 @@ class Algo:
                         ('best_position', [])
                      ])
 
+
         if algo_type=='PSO':
             self.algo = PSO( self.obj, self.n_points, self.dimension,
                              min_bounds = self.min_bounds, 
                              max_bounds = self.max_bounds )
-            # pyswarm.py 
-            #w = 1.0/(2.0*np.log(2))
-            #c = 0.5 + np.log(2) 
-            #self.algo = PSO( self.obj, self.min_bounds, self.max_bounds, 
-            #                 swarmsize=self.n_points, omega=w, phip=c, phig=c )
-
         elif algo_type=='ACOR':
             self.algo = ACOR(self.obj, self.dimension, 
                              min_bounds = self.min_bounds, 
