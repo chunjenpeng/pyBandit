@@ -4,6 +4,11 @@ import numpy as np
 class Combination:
     
     def __init__(self, f_left, n_clusters, n_points, clusters_ranks, **kwargs):
+        
+        # Sort ranks 
+        for ranks in clusters_ranks:
+            ranks.sort()
+
         self.f_left = int(f_left)
         self.n_clusters = int(n_clusters)
         self.n_points = int(n_points)
@@ -90,11 +95,12 @@ if __name__ == '__main__':
     f_left = 100
     n_clusters = 2
     n_points = 12 
-    clusters_ranks = [ [1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12] ]
+    clusters_ranks = np.array([ [6, 2, 3, 4, 5, 1], [7, 9, 8, 10, 11, 12] ])
     combination = Combination(f_left, 
                               n_clusters,
                               n_points,
                               clusters_ranks,
+
                               # Optional
                               model = 'uniform',
                               verbose = True
