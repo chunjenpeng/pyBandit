@@ -42,12 +42,13 @@ class Bandit:
         self.n_samples = 100 * dimension
         init_n_points = max(100*dimension, self.n_points*self.max_arms_num) 
         #init_n_points = self.n_points*self.max_arms_num
-        population_step = int(init_n_points/5)
+        population_step = int(init_n_points/10)
 
         self.init_bandit(init_n_points, population_step)
 
         # Calculate f allocation
         self.remain_f_allocation = np.zeros(len(self.arms))
+        self.remain_f_ratio = self.calculate_remain_f_ratio()
 
 
 
@@ -80,9 +81,6 @@ class Bandit:
                 current_best = original_positions[ np.argmin(original_fitnesses) ]
                 assert max(abs(current_best - best_position)) < 1e-6
 
-                # Translate and optimize matrix
-                self.arms[best_arm].translate_to(current_best)
-                #if DEBUG:
                 if self.plot > 0: 
                     draw_arms( function_id-1, 
                                [ arm.get_positions() for arm in self.arms ],
@@ -91,6 +89,9 @@ class Bandit:
                                **self.fig_config )
 
 
+                # Translate and optimize matrix
+                self.arms[best_arm].translate_to(current_best)
+                '''
                 trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
                 exclude = []
                 for i, arm in enumerate(self.arms):
@@ -100,7 +101,7 @@ class Bandit:
                 self.arms[best_arm].update_matrix( current_best, 
                                                    original_positions,
                                                    exclude )
-                #if DEBUG:
+                '''
                 if self.plot > 0: 
                     draw_arms( function_id-1, 
                                [ arm.get_positions() for arm in self.arms ],
@@ -112,7 +113,7 @@ class Bandit:
                 # Recluster
                 self.recluster()
                 self.remain_f_allocation = np.zeros( len(self.arms) )
-                #if DEBUG:
+                self.remain_f_ratio = self.calculate_remain_f_ratio()
                 if self.plot > 0: 
                     draw_arms( function_id-1, 
                                [ arm.get_positions() for arm in self.arms ],
@@ -133,6 +134,17 @@ class Bandit:
         print('All algorithms stop!')
         return True
 
+    
+    def calculate_remain_f_ratio(self):
+        self.check_point = max( 5000, int(self.f_left/2) )
+        c = Combination(self.f_left, len(self.arms), self.n_points*len(self.arms), self.get_ranks())
+        ratio = c.combination / sum(c.combination)
+        if self.verbose:
+            print('\nRecalculate ratio:')
+            print(c.combination, ratio)
+            print('')
+        return np.array(ratio)
+
 
 
     def find_best_arm(self):
@@ -140,15 +152,13 @@ class Bandit:
         if self.stop():
             return None
 
-        c = Combination(self.f_left, len(self.arms), self.n_points, self.get_ranks())
-        new_ratio = c.combination / sum(c.combination)
-        self.remain_f_allocation = self.remain_f_allocation + new_ratio
+        if self.f_left < self.check_point:
+            self.remain_f_ratio = self.calculate_remain_f_ratio()
+
+        self.remain_f_allocation = self.remain_f_allocation + self.remain_f_ratio
         best_arm = np.argmax(self.remain_f_allocation)
         if self.verbose:
-            print(c.combination)
-            print(new_ratio)
-            print(self.remain_f_allocation)
-            print('Choose arm %d' % best_arm)
+            print('Choose arm %d:' % best_arm, self.remain_f_allocation)
 
         # If best_arm stops, set allocation=-inf and choose again
         while self.arms[best_arm].stop():
@@ -243,7 +253,6 @@ class Bandit:
         matrices = [ Matrix(positions) for positions in cluster_positions ]
 
         if self.plot > 0: 
-        #if DEBUG:
             draw_arms( function_id-1, cluster_positions, matrices, 
                        fig_name='initial.png', **self.fig_config )
         
@@ -285,7 +294,6 @@ class Bandit:
 
 
         if self.plot > 0: 
-        #if DEBUG:
             opt_points = [ arm.get_positions() for arm in self.arms ]
             opt_matrices = [ arm.matrix for arm in self.arms ]
             draw_arms( function_id-1, opt_points, opt_matrices,
@@ -395,7 +403,6 @@ class Bandit:
 
             # Copy unchanged arm to new arms
             if i in unchanged_arms:
-                #new_arms.append( deepcopy(self.arms[ unchanged_arms[i] ]) )
                 new_arms.append( self.arms[ unchanged_arms[i] ] )
 
             # Create new arm
@@ -565,14 +572,13 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    DEBUG = False 
-    testBandit = TestBandit( n_points = 12,
+    testBandit = TestBandit( n_points = 40,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
                              algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
-                             plot = 1,
+                             plot = 10,
                              fig_dir = '%s/F%d' % (fig_dir, function_id)
                             )
     testBandit.run()
