@@ -39,8 +39,8 @@ class Bandit:
         self.iteration = 0
 
         # Initialize Bandit
-        self.n_samples = 100 * dimension
-        init_n_points = max(100*dimension, self.n_points*self.max_arms_num) 
+        self.n_samples = 200 * dimension
+        init_n_points = max(200*dimension, self.n_points*self.max_arms_num) 
         #init_n_points = self.n_points*self.max_arms_num
         population_step = int(init_n_points/10)
 
@@ -109,11 +109,16 @@ class Bandit:
                                fig_name='it%d_recluster_1.png'% (self.iteration-1), 
                                **self.fig_config )
 
+                if self.match_one_arm_criteria():
+                    #TODO set to only one arm
+                    pass
+                else:
+                    # Recluster
+                    self.recluster()
+                    self.remain_f_allocation = np.zeros( len(self.arms) )
+                    self.remain_f_ratio = self.calculate_remain_f_ratio()
 
-                # Recluster
-                self.recluster()
-                self.remain_f_allocation = np.zeros( len(self.arms) )
-                self.remain_f_ratio = self.calculate_remain_f_ratio()
+
                 if self.plot > 0: 
                     draw_arms( function_id-1, 
                                [ arm.get_positions() for arm in self.arms ],
@@ -121,9 +126,28 @@ class Bandit:
                                fig_name='it%d_recluster_2.png'% (self.iteration-1), 
                                **self.fig_config )
 
-
-
         return self.best_position, self.best_fitness
+
+
+
+
+    def match_one_arm_criteria(self):
+        return False
+        if len(self.arms) != 2:
+            return False
+        positions0 = self.arms[0].get_positions()
+        positions1 = self.arms[1].get_positions()
+
+        trans_positions0 = self.arms[1].matrix.transform(positions0)
+        trans_positions1 = self.arms[0].matrix.transform(positions1)
+
+
+
+
+
+
+
+
 
 
 
@@ -140,9 +164,8 @@ class Bandit:
         c = Combination(self.f_left, len(self.arms), self.n_points*len(self.arms), self.get_ranks())
         ratio = c.combination / sum(c.combination)
         if self.verbose:
-            print('\nRecalculate ratio:')
-            print(c.combination, ratio)
-            print('')
+            print('\nRecalculate ratio:', c.combination, '[%s]'%','.join('%5.2f'%i for i in ratio))
+            
         return np.array(ratio)
 
 
@@ -158,7 +181,8 @@ class Bandit:
         self.remain_f_allocation = self.remain_f_allocation + self.remain_f_ratio
         best_arm = np.argmax(self.remain_f_allocation)
         if self.verbose:
-            print('Choose arm %d:' % best_arm, self.remain_f_allocation)
+            print('Choose arm %d: [%s] ' % 
+                  (best_arm, ','.join('%5.2f' % i for i in self.remain_f_allocation)), end='')
 
         # If best_arm stops, set allocation=-inf and choose again
         while self.arms[best_arm].stop():
@@ -384,8 +408,8 @@ class Bandit:
 
         old_arms_ranks = self.get_ranks()
         new_arms_ranks = self.get_ranks(cluster_fitnesses)
-        print('old ranks:\n', old_arms_ranks)
-        print('new ranks:\n', new_arms_ranks)
+        #print('old ranks:\n', old_arms_ranks)
+        #print('new ranks:\n', new_arms_ranks)
 
         # Copy unchanged matrix to new matrices 
         for new_index, new_ranks in enumerate(new_arms_ranks):
@@ -572,13 +596,13 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 40,
+    testBandit = TestBandit( n_points = 50,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
-                             plot = 10,
+                             plot = 100,
                              fig_dir = '%s/F%d' % (fig_dir, function_id)
                             )
     testBandit.run()

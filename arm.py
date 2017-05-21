@@ -23,7 +23,7 @@ class Arm:
 
         self.matrix = Matrix(init_positions)
         self.evaluation_num = 0
-        self.max_evaluation_num = 10000
+        self.max_evaluation_num = 1000
 
 
         # Optimize transformation matrix
@@ -73,7 +73,7 @@ class Arm:
                             init_positions=init_positions, 
                             init_fitnesses=init_fitnesses )
         elif self.algo_type=='ACOR':
-            self.algo = ACOR(self.obj, self.dimension, 
+            self.algo = ACOR(self.transform_obj, self.dimension, 
                              ants_num = 2,
                              archive_size = self.n_points, # 50
                              q = 1e-4, #1e-4, 0.1, 0.3, 0.5, 0.9

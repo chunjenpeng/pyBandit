@@ -4,6 +4,7 @@ from collections import OrderedDict
 from CMAES import CMA
 from SPSO2011 import PSO
 from ACOR import ACOR
+from bandit import Bandit
 from optproblems.cec2005 import CEC2005
 from boundary import Boundary
 
@@ -12,19 +13,35 @@ import pandas as pd
 
 
 class Algo:
-    def __init__(self, n_points=12, dimension=2, function_id=0, algo_type='CMA', 
-                 max_evaluations=1e4, verbose=False, plot=0, fig_dir=None):
+    def __init__(self, n_points=10, dimension=2, function_id=0, use_bandit=False, 
+                 algo_type='CMA', max_evaluations=1e4, verbose=False, plot=0, fig_dir=None):
+
+        if use_bandit:
+            algo_description = 'Bandit + %s' % algo_type
+        else:
+            algo_description = algo_type
+
+        if n_points is None:
+            if algo_type == 'PSO':
+                self.n_points = 40 
+            elif algo_type == 'ACOR':
+                self.n_points = 50 
+            else:
+                self.n_points = 10 
+        else:
+            self.n_points = n_points
 
         print('\n%s: Solving F%d in %dD with population size %d...\n' % 
-              (algo_type, function_id+1, dimension, n_points))
+              (algo_description, function_id+1, dimension, self.n_points))
 
         # Parameters for optproblems
-        self.n_points = n_points
         self.dimension = dimension 
         self.function_id = function_id
         self.function = CEC2005(dimension)[function_id].objective_function 
         self.max_bounds = Boundary(dimension, function_id).max_bounds
         self.min_bounds = Boundary(dimension, function_id).min_bounds
+        self.init_max_bounds = Boundary(dimension, function_id).init_max_bounds
+        self.init_min_bounds = Boundary(dimension, function_id).init_min_bounds
 
         # Parameters for termination 
         self.FE = 0
@@ -49,7 +66,20 @@ class Algo:
                      ])
 
 
-        if algo_type=='PSO':
+        if use_bandit == True:
+            self.algo = Bandit( self.obj, self.n_points, self.dimension, 
+                                algo_type = algo_type,
+                                min_bounds = self.min_bounds,
+                                max_bounds = self.max_bounds,
+                                init_max_bounds = self.init_max_bounds,
+                                init_min_bounds = self.init_min_bounds,
+                                verbose = verbose,
+                                max_evaluations =self.max_evaluations,
+                                max_arms_num = 10,
+                               )
+
+
+        elif algo_type=='PSO':
             self.algo = PSO( self.obj, self.n_points, self.dimension,
                              min_bounds = self.min_bounds, 
                              max_bounds = self.max_bounds )
@@ -74,6 +104,7 @@ class Algo:
 
         if self.FE >= self.max_evaluations:
             self.should_terminate = True
+            self.update_statistics()
             raise Exception('Resources Exhausted!')
 
         error = fitness - self.optimal_fitness
@@ -81,12 +112,15 @@ class Algo:
             self.best_fitness = fitness
             self.best_position = x
             self.should_terminate = True
+            self.update_statistics()
             raise Exception('Found Optima!')
 
         return fitness
 
 
     def run(self):
+        self.iteration += 1
+
         try:
             best_position, best_fitness = self.algo.run() 
         except Exception as e:
@@ -102,22 +136,27 @@ class Algo:
         if self.algo.stop():
             self.should_terminate = True
 
-        # Update statistics
-        self.iteration += 1
+        self.update_statistics()
+        if self.verbose: self.print_status()
+        #if self.plot: self.algo.plot()
+
+
+
+    def update_statistics(self):
         self.stats['iteration'].append(self.iteration)
         self.stats['FEs'].append(self.FE)
         self.stats['error'].append(self.best_fitness - self.optimal_fitness)
         self.stats['best_fitness'].append(self.best_fitness)
         self.stats['best_position'].append(self.best_position.tolist())
-        if self.verbose: self.print_status()
-        #if self.plot: self.algo.plot()
    
+
 
     def print_status(self):
         error = self.best_fitness - self.optimal_fitness
         print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' %
               (self.iteration, self.FE, error, self.best_fitness) )
         #print('position:', self.best_position) 
+
 
 
     def stop(self):
@@ -131,6 +170,7 @@ def main(args):
                 n_points        = args.population, 
                 dimension       = args.dimension, 
                 function_id     = args.function_id-1, 
+                use_bandit      = args.use_bandit,
                 algo_type       = args.algorithms, 
                 max_evaluations = args.max_evaluations, 
                 verbose         = args.verbose,
@@ -151,16 +191,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run original Algorithms on CEC2005 problems')
     parser.add_argument('--algorithms', '-a', default='CMA', type=str, 
                         help='0:CMA, 1:PSO, 2:ACOR')
+    parser.add_argument('--use_bandit', '-b', default=False, type=bool, 
+                        help='-b True or -b False')
     parser.add_argument('--max_evaluations', '-fe', default=10000, type=int, 
                         help='FEs = 1e4*Dimension')
-    parser.add_argument('--population', '-n', default=12, type=int, 
+    parser.add_argument('--population', '-n', default=None, type=int, 
                         help='population') 
     parser.add_argument('--dimension', '-d', default=2, type=int, 
                         help='Dimensions = 2, 10, 30, 50 for all CEC2005 problems') 
     parser.add_argument('--function_id', '-i', default=9, type=int, 
                         help='function_id = 1~25 for all CEC2005 problems') 
     parser.add_argument('--verbose', '-v', default=False, type=bool, 
-                        help='print process')
+                        help='-v True or -v False')
     parser.add_argument('--plot_after_iteration', '-plot', default=0, type=int, 
                         help='number of iterations to show clusters and contour')
     parser.add_argument('--csv_file', '-csv', default=None, type=str, 

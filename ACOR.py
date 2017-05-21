@@ -77,6 +77,7 @@ class ACOR:
 
             # Select a Gaussian function
             selected = self.custom.rvs()
+
             sigma = self.xi / (self.k-1) * \
                     np.sum( np.abs(self.archive[:,:-1] - self.archive[selected, :-1]), axis=0 )
             assert (sigma >= 0).all()
@@ -101,6 +102,7 @@ class ACOR:
         self.archive = np.vstack(( new_archive, self.archive ))
         # Sort archive by fitness 
         self.archive = self.archive[ np.argsort(self.archive[:,-1]) ]
+
         # Keep only top k solutions
         self.archive = self.archive[:self.k][:]
 
