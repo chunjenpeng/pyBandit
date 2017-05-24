@@ -160,9 +160,16 @@ class Bandit:
 
     
     def calculate_remain_f_ratio(self):
+    
         self.check_point = max( 5000, int(self.f_left/2) )
+        #self.check_point = max( np.inf, int(self.f_left/2) )
         c = Combination(self.f_left, len(self.arms), self.n_points*len(self.arms), self.get_ranks())
         ratio = c.combination / sum(c.combination)
+        
+        #level = max( 0, min(c.combination) - self.n_points)
+        #combination = c.combination - level
+        #ratio = combination / sum(combination)
+
         if self.verbose:
             print('\nRecalculate ratio:', c.combination, '[%s]'%','.join('%5.2f'%i for i in ratio))
             
@@ -261,10 +268,16 @@ class Bandit:
 
 
         # KMeans clustering
-        cluster_positions, cluster_fitnesses = \
-            self.k_means(k, selected_positions, selected_fitnesses)  
+        if k > 1:
+            cluster_positions, cluster_fitnesses = \
+                self.k_means(k, selected_positions, selected_fitnesses)  
+        else:
+            cluster_positions = np.array([selected_positions])
+            cluster_fitnesses = np.array([selected_fitnesses])
+            
         assert len(cluster_positions) == k
         assert len(cluster_positions) == len(cluster_fitnesses)
+
 
         return cluster_positions, cluster_fitnesses
 
@@ -361,7 +374,8 @@ class Bandit:
 
 
     def estimate_k_clusters( self, X, max_n_clusters ):
-
+        
+        #'''
         # silhouette_score is between [-1,1], 
         # so set score of 0 cluster as -1.0
         # so set score of 1 cluster as 0.0
@@ -373,6 +387,17 @@ class Bandit:
             score[k] = silhouette_score(X, labels)
 
         return np.argmax(score) 
+
+
+        '''
+        from gap import gap
+        g = gap(X, ks = range(1, max_n_clusters+1))
+        #print(g)
+        #print([ g[i] - g[i+1] for i in range(max_n_clusters - 1) ])
+        return 1
+        return np.argmax(g)+1
+        #'''
+
 
 
 
@@ -596,13 +621,13 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 50,
+    testBandit = TestBandit( n_points = 40,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
-                             plot = 100,
+                             plot = 10,
                              fig_dir = '%s/F%d' % (fig_dir, function_id)
                             )
     testBandit.run()

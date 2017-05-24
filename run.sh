@@ -32,9 +32,7 @@ fi
 
 echo "Using $totalNP processors..."
 
-Bandit=True
-#for DIM in 2 10 30 50
-for DIM in 10 30 50
+for DIM in 2 #10 30 50
 do
     for ALGO in "ACOR" "PSO" "CMA"
     do
@@ -52,7 +50,12 @@ do
                 done
     
                 cd $CODE_PATH
-                python3 -u $JOBNAME -b $Bandit -a $ALGO -i $F -d $DIM -v True -csv $DIR/F${F}_${DIM}D_${repeat}.csv &>  $DIR/F${F}_${DIM}D_${repeat}.log & 
+                # Run bandit
+                python3 -u $JOBNAME -b True -a $ALGO -i $F -d $DIM -v True -csv $DIR/F${F}_${DIM}D_${repeat}.csv &>  $DIR/F${F}_${DIM}D_${repeat}.log & 
+
+
+                # Run original Algo
+                #python3 -u $JOBNAME -a $ALGO -i $F -d $DIM -v True -csv $DIR/F${F}_${DIM}D_${repeat}.csv &>  $DIR/F${F}_${DIM}D_${repeat}.log & 
     
                 echo "Submitting $ALGO F${F}_${DIM}D_${repeat}..."
                 sleep 1
