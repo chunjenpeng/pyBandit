@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 def get_errors(file_path, target_FEs):
     try:
@@ -13,16 +14,17 @@ def get_errors(file_path, target_FEs):
 
     errors = []
     for fe in target_FEs:
-        df = data.loc[ data.FEs > fe, ['FEs', 'error'] ].min()
-        if pd.isnull(df.error):
+        if any(data.FEs > fe):
+            df = data[ data.FEs > fe ].iloc[0]
+        else:
             df = data.iloc[-1]
-        errors.append( [df.FEs, df.error] )
+        FEs, error = df.FEs, df.error
+        errors.append( [FEs, error] )
     return np.array(errors)
 
 
-def generate_table(data_path, problem, csv_file=None):
+def generate_table(data_path, problem, target_FEs):
     repeats = range(1, 26)
-    target_FEs = [ 5e2, 1e3, 1e4, 2e4 ]
     all_errors = np.empty((len(repeats), len(target_FEs)))
     all_errors[:] = np.NAN
     
@@ -41,31 +43,122 @@ def generate_table(data_path, problem, csv_file=None):
     index = ['1st(Best)', '7th', '13th(Median)', '19th', '25th(Worst)', 'Mean', 'Std']
     df = pd.DataFrame( data, columns=columns, index=index )
 
-    if csv_file is not None:
-        print('\nSaving to %s/results/%s.csv...' % (data_path, problem))
-        print(df)
-        df.to_csv( csv_file )
-
     return df
 
 
 
-def main():
-    data_dir = 'data/2017-05-22_original_algos'
-    for algo in ['CMA', 'PSO', 'ACOR']:
-        #for dimension in [2, 10, 30, 50]:
-        for dimension in [2]:
-            for function_id in range(1, 26):
+def plot_error():
+    data_dir = 'data/2017-05-22_ori_bandit'
+    target_FEs = [ 5e2, 1e3, 5e3, 1e4, 2e4 ]
+    #for dimension in [2, 10, 30, 50]:
+    for dimension in [2]:
+        for function_id in range(1, 26):
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.set_xscale( "log", nonposx='clip' )
+            ax.set_yscale( "log", nonposy='clip' )
+            #ax.set_ylim(1e-9)
+
+            for algo in ['CMA', 'PSO', 'ACOR']:
+
+                data_dir = 'data/2017-05-22_original_algos'
                 data_path = '%s/%s' % (data_dir, algo)
                 problem = 'F%d_%dD' % (function_id, dimension)
-                #generate_table(data_path, problem)
+                df = generate_table(data_path, problem, target_FEs)
+                print('\n',algo, problem)
+                print(df)
 
-                #'''
+                X = np.array(target_FEs)
+                Y = np.array(df.loc['Mean'].values)
+                Y_error = np.array(df.loc['Std'].values)
+                ax.plot( X, Y, '-o', label=algo )
+                #ax.errorbar( X, Y, Y_error, fmt='o', label=algo )
+
+                data_dir = 'data/2017-05-22_ori_bandit'
+                data_path = '%s/%s' % (data_dir, algo)
+                problem = 'F%d_%dD' % (function_id, dimension)
+                df = generate_table(data_path, problem, target_FEs)
+                print(df)
+                '''
                 if not os.path.exists( '%s/results' % data_path ):
                     os.makedirs( '%s/results' % data_path )
                 csv_file = '%s/results/%s.csv' % (data_path, problem)
-                generate_table(data_path, problem, csv_file = csv_file)
-                #'''
+                print('\nSaving to %s/results/%s.csv...' % (data_path, problem))
+                print(df)
+                df.to_csv( csv_file )
+                '''
+
+
+                X = np.array(target_FEs)
+                Y = np.array(df.loc['Mean'].values)
+                Y_error = np.array(df.loc['Std'].values)
+                ax.plot( X, Y, '-o', label='Bandit+%s'%algo )
+                #ax.errorbar( X, Y, Y_error, fmt='o', label='Bandit+%s'%algo )
+
+            plt.legend()
+            plt.title( problem )
+            plt.xlabel('FEs')
+            plt.ylabel('Error')
+            plt.savefig( 'plots/2017-05-23_ori_bandit/%s.png' % problem )
+            plt.close(fig)
+
+def main():
+    data_dir = 'data/2017-05-22_ori_bandit'
+    target_FEs = [ 5e2, 1e3, 5e3, 1e4, 2e4 ]
+    #for dimension in [2, 10, 30, 50]:
+    for dimension in [2]:
+        for function_id in range(1, 26):
+            function_id = 5
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.set_xscale( "log", nonposx='clip' )
+            ax.set_yscale( "log", nonposy='clip' )
+            #ax.set_ylim(1e-9)
+
+            for algo in ['CMA', 'PSO', 'ACOR']:
+
+                data_dir = 'data/2017-05-22_original_algos'
+                data_path = '%s/%s' % (data_dir, algo)
+                problem = 'F%d_%dD' % (function_id, dimension)
+                df = generate_table(data_path, problem, target_FEs)
+                print('\n',algo, problem)
+                print(df)
+
+                X = np.array(target_FEs)
+                Y = np.array(df.loc['Mean'].values)
+                Y_error = np.array(df.loc['Std'].values)
+                ax.plot( X, Y, '-o', label=algo )
+                #ax.errorbar( X, Y, Y_error, fmt='o', label=algo )
+
+                data_dir = 'data/2017-05-22_ori_bandit'
+                data_path = '%s/%s' % (data_dir, algo)
+                problem = 'F%d_%dD' % (function_id, dimension)
+                df = generate_table(data_path, problem, target_FEs)
+                print(df)
+                '''
+                if not os.path.exists( '%s/results' % data_path ):
+                    os.makedirs( '%s/results' % data_path )
+                csv_file = '%s/results/%s.csv' % (data_path, problem)
+                print('\nSaving to %s/results/%s.csv...' % (data_path, problem))
+                print(df)
+                df.to_csv( csv_file )
+                '''
+
+
+                X = np.array(target_FEs)
+                Y = np.array(df.loc['Mean'].values)
+                Y_error = np.array(df.loc['Std'].values)
+                ax.plot( X, Y, '-o', label='Bandit+%s'%algo )
+                #ax.errorbar( X, Y, Y_error, fmt='o', label='Bandit+%s'%algo )
+
+            plt.legend()
+            plt.title( problem )
+            plt.xlabel('FEs')
+            plt.ylabel('Error')
+            plt.savefig( 'plots/2017-05-23_ori_bandit/%s.png' % problem )
+            plt.close(fig)
+            input()
+
 
 if __name__ == '__main__':
     main()
