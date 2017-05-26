@@ -380,12 +380,23 @@ class TestSPSO2011:
 
 
 if __name__ == '__main__':
+
+    function_id = 1 # F1 ~ F25
+    fig_dir = 'test_pso'
+
+    import sys
+    if len(sys.argv) == 3:
+        function_id = int(sys.argv[1])
+        fig_dir = sys.argv[2]
+    elif len(sys.argv) == 2:
+        function_id = int(sys.argv[1])
+
     testSPSO2011 = TestSPSO2011(n_points = 12, 
                                 dimension = 2,
-                                function_id = 2, # F1 ~ F25
+                                function_id = function_id, # F1 ~ F25
                                 max_evaluations = 10000,
                                 verbose=True,
-                                plot = 0, # number of iterations to draw a figure
-                                fig_dir = 'test_pso'
+                                plot = 1, # number of iterations to draw a figure
+                                fig_dir = '%s/F%d' % (fig_dir, function_id)
                                 )
     testSPSO2011.run()
