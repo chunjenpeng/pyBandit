@@ -31,6 +31,8 @@ class Matrix:
     
     def transform(self, positions, **kwargs):
         get_original = kwargs.get('get_original', False)
+        if len(positions) == 0:
+            return []
 
         positions = np.array(positions)
         positions = np.hstack((positions, np.ones((positions.shape[0], 1))))
@@ -48,6 +50,8 @@ class Matrix:
     
     def inverse_transform(self, positions, **kwargs):
         get_original = kwargs.get('get_original', False)
+        if len(positions) == 0:
+            return []
 
         positions = np.array(positions)
         positions = np.hstack((positions, np.ones((positions.shape[0], 1))))
