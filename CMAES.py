@@ -1,4 +1,5 @@
 from operator import itemgetter
+from matplotlib.patches import Ellipse
 import cma
 import numpy as np
 
@@ -10,6 +11,10 @@ class CMA:
         self.fitnesses = np.zeros(n_points)
         min_bounds = kwargs.get('min_bounds', np.array([0.0] * dimension))
         max_bounds = kwargs.get('max_bounds', np.array([1.0] * dimension))
+
+        self.dimension = dimension
+        self.n_points = n_points
+        self.update_count = 0 
 
         assert len(min_bounds) == dimension
         assert len(min_bounds) == len(max_bounds)
@@ -41,6 +46,7 @@ class CMA:
             best_position, best_fitness = self.run()            
     
 
+
     def run(self):
         try:
             self.positions = self.es.ask()
@@ -52,12 +58,31 @@ class CMA:
         #self.positions = self.es.ask()
         self.fitnesses = [ self.obj(p) for p in self.positions ]
         self.es.tell(self.positions, self.fitnesses)
+
         index, best_fitness = min( enumerate(self.fitnesses), key = itemgetter(1) )
         if self.es.stop():
             print('CMA-ES converges!')
         return self.positions[index], best_fitness
 
+
+
+    def update_one_particle(self):
+        position = self.es.ask(1)[0]
+        self.positions[self.update_count] = position 
+        self.fitnesses[self.update_count] = self.obj(position)
+
+        self.update_count += 1 
+        if self.update_count >= self.n_points:
+            self.es.tell(self.positions, self.fitnesses)
+            self.update_count = 0
+
+        index, best_fitness = min( enumerate(self.fitnesses), key = itemgetter(1) )
+        if self.es.stop():
+            print('CMA-ES converges!')
+        return self.positions[index], best_fitness
     
+
+
     def stop(self):
         return self.es.stop()
 
@@ -69,12 +94,36 @@ class CMA:
         return self.fitnesses
 
 
+    def draw(self, ax, color):
+        # Draw scatter
+        X = self.get_positions()
+        ax.scatter(X[:,0], X[:,1], color=color, s=10)
+
+        # Draw covariance ellipse
+        pos = self.es.gp.pheno( self.es.mean, into_bounds=self.es.boundary_handler.repair)
+        cov = self.es.C * (self.es.sigma**2)
+
+        vals, vecs = np.linalg.eigh(cov)
+        order = vals.argsort()[::-1]
+        vals, vecs = vals[order], vecs[:,order]
+
+        theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
+        for nstd in range(1,4):
+            width, height = 2 * nstd * np.sqrt(vals)
+            ellip = Ellipse( xy = pos,
+                             width = width, 
+                             height = height,
+                             angle = theta )
+            ellip.set_alpha(0.2)
+            ellip.set_facecolor(color)
+            ax.add_artist(ellip)
+
+
 
 def draw_CMAES( cmaes, obj, fig_name, **kwargs ):
 
     import os
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Ellipse
     from matplotlib import cm
     from optproblems import Individual, Problem
 
@@ -123,42 +172,8 @@ def draw_CMAES( cmaes, obj, fig_name, **kwargs ):
     if optimal:
         ax.scatter( optimal[0], optimal[1], color='w', marker='x', s=100 )
 
-
-    # Draw scatter
-    X = cmaes.get_positions()
-    ax.scatter(X[:,0], X[:,1], color='r', s=10)
-    
-
-    # Draw step circle 
-    es = cmaes.es
-    #pos = es.mean
-    pos = es.gp.pheno( es.mean, into_bounds=es.boundary_handler.repair)
-    cov = es.C * (es.sigma**2)
-    #cov = np.cov(X[:,0], X[:,1])
-    '''
-    print(pos)
-    print(es.gp.pheno( es.mean, into_bounds=es.boundary_handler.repair))
-    print(es.C * (es.sigma**2) )
-    print()
-    print(np.mean(X, axis=0))
-    print(np.cov(X[:,0], X[:,1]))
-    print()
-    '''
-
-    vals, vecs = np.linalg.eigh(cov)
-    order = vals.argsort()[::-1]
-    vals, vecs = vals[order], vecs[:,order]
-
-    theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
-    for nstd in range(1,4):
-        width, height = 2 * nstd * np.sqrt(vals)
-        ellip = Ellipse( xy = pos,
-                         width = width, 
-                         height = height,
-                         angle = theta )
-        ellip.set_alpha(0.2)
-        ellip.set_facecolor('red')
-        ax.add_artist(ellip)
+    # Draw scatter & covariance ellipse
+    cmaes.draw(ax, 'red') 
 
     plt.savefig('%s/%s' % (fig_dir, fig_name) )
     plt.close(fig)
@@ -236,7 +251,8 @@ class TestCMAES:
             self.iteration += 1
             
             try:
-                (self.best_position, self.best_fitness) = self.algo.run()
+                #(self.best_position, self.best_fitness) = self.algo.run()
+                (self.best_position, self.best_fitness) = self.algo.update_one_particle()
             except Exception as e:
                 print(e)
                 break

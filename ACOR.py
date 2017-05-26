@@ -65,6 +65,9 @@ class ACOR:
         self.iteration = 0
         self.converge_error = 1e-8
         self.should_terminate = False
+        self.update_count = 0
+        self.new_archive = np.zeros((self.n_ants, self.dimension+1))
+
 
 
 
@@ -105,6 +108,54 @@ class ACOR:
 
         # Keep only top k solutions
         self.archive = self.archive[:self.k][:]
+
+        best_position, best_fitness = self.archive[0,:-1], self.archive[0,-1]
+
+        if self.should_terminate:
+            print('ACOR converges: std in all dimensions < %.2e' % self.converge_error )
+        return (best_position, best_fitness)
+    
+
+
+    def update_one_particle(self):
+
+        # Select a Gaussian function
+        selected = self.custom.rvs()
+
+        sigma = self.xi / (self.k-1) * \
+                np.sum( np.abs(self.archive[:,:-1] - self.archive[selected, :-1]), axis=0 )
+        assert (sigma >= 0).all()
+        if max(sigma) < self.converge_error:
+            self.should_terminate = True
+
+        # Generate new samples
+        new_position = np.zeros(self.dimension)
+        for i in range(self.dimension):
+            new_position[i] = np.random.normal( self.archive[selected][i], sigma[i] )
+            # Check if new_position is within boundary
+            new_position[i] = min(new_position[i], self.max_bounds[i])
+            new_position[i] = max(new_position[i], self.min_bounds[i])
+
+        new_fitness = self.obj(new_position)
+
+        self.new_archive[self.update_count,:-1] = new_position
+        self.new_archive[self.update_count,-1] = new_fitness
+
+
+        self.update_count += 1
+        if self.update_count >= self.n_ants:
+            self.iteration += 1
+            self.update_count = 0
+
+            # Add new solutions into archive
+            self.archive = np.vstack(( self.new_archive, self.archive ))
+            # Sort archive by fitness 
+            self.archive = self.archive[ np.argsort(self.archive[:,-1]) ]
+
+            # Keep only top k solutions
+            self.archive = self.archive[:self.k][:]
+            self.new_archive = np.zeros((self.n_ants, self.dimension+1))
+
 
         best_position, best_fitness = self.archive[0,:-1], self.archive[0,-1]
 
@@ -264,14 +315,15 @@ class TestACOR:
     
     def run(self):
         while not self.algo.stop():
-            self.iteration += 1
             
             try:
-                (self.best_position, self.best_fitness) = self.algo.run()
+                #(self.best_position, self.best_fitness) = self.algo.run()
+                (self.best_position, self.best_fitness) = self.algo.update_one_particle()
             except Exception as e:
                 print(e)
                 break
 
+            self.iteration = self.algo.iteration 
 
             if self.verbose:
                 error = self.best_fitness - self.optimal_fitness
@@ -302,10 +354,10 @@ class TestACOR:
 
 if __name__ == '__main__':
     testACOR = TestACOR(n_points = 50, # archive size
-                        dimension = 30,
-                        function_id = 9, # F1 ~ F25
+                        dimension = 2,
+                        function_id = 1, # F1 ~ F25
                         max_evaluations = 10000,
-                        #verbose=True,
+                        verbose=True,
                         plot = 0, # number of iterations to draw a figure
                         fig_dir = 'test_acor'
                         )

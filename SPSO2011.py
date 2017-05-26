@@ -42,6 +42,8 @@ class PSO:
 
         # Parameters for termiantion
         self.iteration = 0
+        self.update_count = 0
+        self.update_order = np.random.permutation(self.n_points)
         self.should_terminate = False
         self.best_fitness = float('Inf')
 
@@ -148,6 +150,51 @@ class PSO:
         self.best_fitness = best.current.fitness
 
         return (best.current.position, best.current.fitness)
+
+
+    def update_one_particle(self):
+        i = self.update_order[ self.update_count ]  
+        p = self.swarm[i]
+
+        # Update best of previous_best in neighborhood
+        best_neighbor = min( [self.swarm[neighbor] for neighbor in self.topology[i] ], 
+                             key = attrgetter('previous_best.fitness') )
+        p.previous_best_neighbor = deepcopy(best_neighbor.previous_best)
+
+        # Update velocity
+        random_position = self.sample_from_hypersphere(p)
+        p.velocity = self.w * p.velocity + random_position - p.current.position
+
+        # Update position
+        p.current.position += p.velocity
+        self.check_confinement(i)
+            
+        # Update previous_best
+        p.current.fitness = self.obj(p.current.position)
+        if p.current.fitness < p.previous_best.fitness:
+            p.previous_best = deepcopy(p.current)
+
+            # Update best of previous_best in neighborhood
+            if p.previous_best.fitness < p.previous_best_neighbor.fitness:
+                p.previous_best_neighbor = deepcopy(p.previous_best)
+                
+
+        best = min(self.swarm, key = attrgetter('current.fitness'))
+
+        self.update_count += 1
+        if self.update_count >= self.n_points:
+            self.iteration += 1
+            self.update_count = 0
+            self.update_order = np.random.permutation(self.n_points)
+
+            # Update topology if the best know solution has not been improved
+            if best.current.fitness >= self.best_fitness:
+                self.topology = self.random_topology()
+            self.best_fitness = best.current.fitness
+
+        return best.current.position, best.current.fitness
+        
+
 
     
     def sample_from_hypersphere(self, particle):
@@ -346,7 +393,8 @@ class TestSPSO2011:
             self.iteration += 1
             
             try:
-                (self.best_position, self.best_fitness) = self.algo.run()
+                #(self.best_position, self.best_fitness) = self.algo.run()
+                (self.best_position, self.best_fitness) = self.algo.update_one_particle()
             except Exception as e:
                 print(e)
                 break
