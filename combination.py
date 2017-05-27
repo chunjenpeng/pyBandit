@@ -102,6 +102,6 @@ if __name__ == '__main__':
                               clusters_ranks,
 
                               # Optional
-                              model = 'uniform',
+                              model = 'uniform', # 'uniform', 'linear', quadratic'
                               verbose = True
                               )
