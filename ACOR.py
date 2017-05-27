@@ -164,6 +164,16 @@ class ACOR:
         return (best_position, best_fitness)
     
 
+    def transform(self, inv_matrix, new_matrix):
+
+        original_positions = inv_matrix.inverse_transform( self.get_positions() )
+        new_positions = new_matrix.transform( original_positions )
+
+        # Check if new_position is within boundary
+        np.clip( new_positions, self.min_bounds, self.max_bounds, out=new_positions )
+
+        self.archive = np.concatenate((new_positions, self.get_fitnesses()[:,None]), axis=1)
+
 
     def stop(self):
         return self.should_terminate
@@ -175,6 +185,19 @@ class ACOR:
         return self.archive[:, -1]
     
     
+    def draw(self, ax, color, matrix=None):
+        X = self.get_positions()
+
+        if matrix is not None:
+            X = matrix.inverse_transform(X)
+
+        # Draw best solution
+        ax.scatter(X[0,0], X[0,1], color='y', marker = '*', s=150)
+
+        # Draw scatter
+        ax.scatter(X[:,0], X[:,1], color=color, s=10)
+
+
 
 def draw_quiver( aco, obj, fig_name, **kwargs ):
 

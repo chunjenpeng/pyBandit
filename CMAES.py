@@ -94,9 +94,13 @@ class CMA:
         return self.fitnesses
 
 
-    def draw(self, ax, color):
+    def draw(self, ax, color, matrix = None):
+
         # Draw scatter
         X = self.get_positions()
+        if matrix is not None:
+            X = matrix.inverse_transform( X )
+
         ax.scatter(X[:,0], X[:,1], color=color, s=10)
 
         # Draw covariance ellipse
@@ -107,9 +111,16 @@ class CMA:
         order = vals.argsort()[::-1]
         vals, vecs = vals[order], vecs[:,order]
 
+        if matrix is not None:
+            pos = matrix.inverse_transform( [pos] )[0]
+            #cov = matrix.inverse_transform( self.es.C ) * \
+            #      (matrix.inverse_transform( [self.es.sigma] )[0] ** 2 )
+            vals = abs(matrix.inverse_transform( [vals] )[0])
+            vecs = matrix.inverse_transform( vecs )
+
         theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
         for nstd in range(1,4):
-            width, height = 2 * nstd * np.sqrt(vals)
+            width, height = 2 * nstd * np.sqrt(abs(vals))
             ellip = Ellipse( xy = pos,
                              width = width, 
                              height = height,

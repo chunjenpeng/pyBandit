@@ -234,6 +234,28 @@ class PSO:
             else:
                 p.velocity[max_index] = -0.5 * p.velocity[max_index]
 
+
+
+    def transform(self, inv_matrix, new_matrix):
+
+        def trans(X):
+            original_X = inv_matrix.inverse_transform( [X] )[0]
+            return new_matrix.transform([original_X])[0]
+
+
+        for i, particle in enumerate(self.swarm):
+
+            start_point = particle.current.position - particle.velocity
+            start_point = trans(start_point)
+
+            particle.current.position = trans(particle.current.position)
+            particle.previous_best.positoin = trans(particle.previous_best.position)
+            particle.previous_best_neighbor.positoin = trans(particle.previous_best_neighbor.position)
+
+            particle.velocity = particle.current.position - start_point
+            self.check_confinement(i) 
+            
+
     
     def print_status(self):
         for i in range(self.n_points):
@@ -253,6 +275,31 @@ class PSO:
         return [ p.current.position for p in self.swarm ]
     def get_fitnesses(self):
         return [ p.current.fitness for p in self.swarm ]
+
+
+    def draw(self, ax, color, matrix = None):
+        # Draw arrow
+        positions = np.array([ p.current.position for p in self.swarm ])
+        velocities = np.array([ p.velocity for p in self.swarm ])
+
+
+        if matrix is not None:
+            start_points = positions - velocities
+
+            positions = matrix.inverse_transform( positions )
+
+            start_points = matrix.inverse_transform( start_points )
+            velocities = positions - start_points
+
+        X = positions[:,0]
+        Y = positions[:,1]
+        U = velocities[:,0]
+        V = velocities[:,1]
+        #M = np.hypot(U, V)
+        Q = ax.quiver(X, Y, U, V, color='m', units='x', pivot='tip', scale=1)
+    
+        # Draw scatter
+        ax.scatter(X, Y, color=color, s=10)
 
 
 
@@ -308,6 +355,8 @@ def draw_quiver( pso, obj, fig_name, **kwargs ):
     if optimal:
         ax.scatter( optimal[0], optimal[1], color='w', marker='x', s=100 )
 
+    pso.draw( ax, 'r' )
+    '''
     # Draw arrow
     X = np.array([ p.current.position[0] for p in pso.swarm ])
     Y = np.array([ p.current.position[1] for p in pso.swarm ])
@@ -318,7 +367,7 @@ def draw_quiver( pso, obj, fig_name, **kwargs ):
     
     # Draw scatter
     ax.scatter(X, Y, color='r', s=10)
-
+    '''
     plt.savefig('%s/%s' % (fig_dir, fig_name) )
     plt.close(fig)
 

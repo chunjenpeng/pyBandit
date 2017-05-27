@@ -3,6 +3,7 @@ from operator import attrgetter
 from scipy.optimize import fmin_tnc
 import numpy as np 
 
+from OnePlusOne_ES import OnePlusOne_ES
 from CMAES import CMA
 from SPSO2011 import PSO
 from ACOR import ACOR
@@ -11,7 +12,7 @@ from matrix import Matrix
 
 class Arm:
     def __init__(self, obj, n_points, init_positions, init_fitnesses, 
-                 algo_type='CMA', exclude=None, **kwargs ):
+                 algo_type='CMA', exclude=None, matrix=None, **kwargs ):
 
         self.obj = obj
         self.n_points = n_points
@@ -21,15 +22,19 @@ class Arm:
         self.min_bounds = kwargs.get('min_bounds', np.array([0.0] * self.dimension))
         self.max_bounds = kwargs.get('max_bounds', np.array([1.0] * self.dimension))
 
-        self.matrix = Matrix(init_positions)
         self.evaluation_num = 0
-        self.max_evaluation_num = 1000
+        self.max_evaluation_num = 10000
 
 
-        # Optimize transformation matrix
-        best_index = np.argmin( init_fitnesses )
-        best_position = init_positions[best_index] 
-        self.update_matrix(best_position, init_positions, exclude)
+        if matrix is None:
+            # Optimize transformation matrix
+            best_index = np.argmin( init_fitnesses )
+            best_position = init_positions[best_index] 
+
+            self.matrix = Matrix(init_positions)
+            self.update_matrix(best_position, init_positions, exclude)
+        else:
+            self.matrix = matrix
         
         # Resize population == n_points
         positions, fitnesses = self.resize_population( init_positions, init_fitnesses )
@@ -51,6 +56,8 @@ class Arm:
             index = init_fitnesses.argsort()
             selected = index[:self.n_points]
             positions, fitnesses = init_positions[selected], init_fitnesses[selected]
+        elif len(init_positions) == self.n_points:
+            positions, fitnesses = init_positions, init_fitnesses
         else:
             # Add points until population == n_points
             add_n = self.n_points - len(init_positions)
@@ -92,12 +99,22 @@ class Arm:
 
 
     def pull(self):
-        best_position, best_fitness = self.algo.run() 
+        #best_position, best_fitness = self.algo.run() 
+        best_position, best_fitness = self.algo.update_one_particle()
         return self.matrix.inverse_transform([best_position])[0], best_fitness
 
 
-    def reached_border(self):
-        margin = 0.05
+    def reached_border(self, r = 0.4):
+
+        #'''
+        trans_positions = self.algo.get_positions()
+        best_index = np.argmax(self.algo.get_fitnesses())  
+        trans_best_position = trans_positions[best_index]
+        dist_best_to_center = np.linalg.norm( trans_best_position - 0.5 )
+        return (dist_best_to_center > r)
+        #'''
+
+        margin = 0.10
 
         trans_positions = self.algo.get_positions()
         trans_mean_position = np.mean(trans_positions, axis=0)
@@ -155,7 +172,8 @@ class Arm:
         #print( 'Init score:', self.evaluate(best_solution, debug=True) )
 
 
-        #'''
+        '''
+        # Newton Conjugate-Gradient algorithm
         self.evaluation_num = 0
         while self.evaluation_num < self.max_evaluation_num:
             solution = best_solution + np.random.uniform( -1e-3, 1e-3, size=best_solution.shape )
@@ -171,9 +189,12 @@ class Arm:
 
         '''
 
+        '''
+        # CMA-ES
         import cma
-        es = cma.CMAEvolutionStrategy( best_solution.tolist(), 0.0005, 
+        es = cma.CMAEvolutionStrategy( best_solution.tolist(), 1e-4, 
                                        {'maxiter': self.max_evaluation_num} )
+
         while not es.stop():
             solutions = es.ask()
             es.tell( solutions, [self.evaluate(s) for s in solutions] )
@@ -183,8 +204,20 @@ class Arm:
                 best_score = score
                 best_solution = x_best
             #print( 'Final score:', score) 
-        #'''
-
+        '''
+        repeat = 20
+        for _ in range(repeat):
+            es = OnePlusOne_ES( self.evaluate, len(best_solution), 
+                                parent = self.matrix.matrix.ravel(),
+                                #parent = best_solution, 
+                                step = 0.1,
+                                max_iteration = self.max_evaluation_num / repeat )
+            while not es.stop():
+                x_best, score = es.run()
+            if score < best_score:
+                best_score = score
+                best_solution = x_best
+            #print( 'Final score:', score) 
 
 
         self.matrix.matrix = np.array(best_solution).reshape( self.matrix.matrix.shape )
@@ -199,9 +232,10 @@ class Arm:
         
         trans_in   = self.matrix.transform(self.original_positions_in)
 
-        trans_out  = self.matrix.transform(self.original_positions_out)
-        trans_out  = trans_out[ np.all( trans_out >= 0, axis=1) ]
-        trans_out  = trans_out[ np.all( trans_out <= 1, axis=1) ]
+        if self.original_positions_out.any():
+            trans_out  = self.matrix.transform(self.original_positions_out)
+            trans_out  = trans_out[ np.all( trans_out >= 0, axis=1) ]
+            trans_out  = trans_out[ np.all( trans_out <= 1, axis=1) ]
 
 
         ori_samples = self.matrix.inverse_transform(self.samples)
@@ -221,11 +255,12 @@ class Arm:
         dist_should_be_in   = abs(sum( trans_in[ np.where(trans_in > 1.0) ] - 1.0 ))
         dist_should_be_in  += abs(sum( trans_in[ np.where(trans_in < 0.0) ] ))
 
-
-        lower_half = np.where( np.logical_and( trans_out >= 0.0, trans_out < 0.5 ) )
-        upper_half = np.where( np.logical_and( trans_out >= 0.5, trans_out <= 1.0 ) )
-        dist_should_be_out  = abs(sum( trans_out[ lower_half ] ))
-        dist_should_be_out += abs(sum( trans_out[ upper_half ] - 0.5 ))
+        dist_should_be_out = 0 
+        if self.original_positions_out.any():
+            lower_half = np.where( np.logical_and( trans_out >= 0.0, trans_out < 0.5 ) )
+            upper_half = np.where( np.logical_and( trans_out >= 0.5, trans_out <= 1.0 ) )
+            dist_should_be_out  = abs(sum( trans_out[ lower_half ] ))
+            dist_should_be_out += abs(sum( trans_out[ upper_half ] - 0.5 ))
 
         
         reconstruct = self.matrix.inverse_transform( np.clip(trans_in, 0, 1) )
@@ -277,11 +312,33 @@ class Arm:
             #return reconstruct_error
 
 
+
+    def transform(self, new_matrix):
+        self.algo.transform( self.matrix, new_matrix )
+        self.matrix = deepcopy(new_matrix)
+
+
+
+    def draw(self, ax, color, on_subspace=False):
+
+        # Plot borders on original search space
+        border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
+        if not on_subspace:
+            border = self.matrix.inverse_transform( border )
+        ax.plot(border[:, 0], border[:, 1], color = color)
+
+        # Plot algorithm
+        if not on_subspace:
+            self.algo.draw( ax, color, self.matrix )
+        else:
+            self.algo.draw( ax, color )
+
+
         
 
-def draw_arms(function_id, cluster_positions, matrices, **kwargs):
+def draw_arms(function_id, arms, **kwargs):
 
-    assert len(cluster_positions) == len(matrices)
+    #assert len(cluster_positions) == len(matrices)
     import os
     from optproblems.cec2005 import CEC2005
     import matplotlib.pyplot as plt
@@ -293,11 +350,11 @@ def draw_arms(function_id, cluster_positions, matrices, **kwargs):
     function = CEC2005(dim)[function_id].objective_function
     optimal_pos = CEC2005(dim)[function_id].get_optimal_solutions()[0].phenome
     boundary = Boundary(dim, function_id)
+    plot_subspace = False
 
-    k = len(matrices)
     inch_size = 4
-    #fig_w = k + 1
-    fig_w = 1.2
+    k = len(arms)
+    fig_w = (k + 1) if plot_subspace else 1.2
     fig_h = 1
     fig = plt.figure(figsize = (fig_w * inch_size, fig_h * inch_size))
     cmap = cm.coolwarm
@@ -312,6 +369,8 @@ def draw_arms(function_id, cluster_positions, matrices, **kwargs):
 
     print('ploting %s...' % fig_name)
 
+    # Plot contour
+    ax = fig.add_subplot(fig_h, fig_w, 1)
 
     # Get Mesh Solutions for contour
     step = (boundary.max_bounds[0] - boundary.min_bounds[0]) / 100
@@ -328,57 +387,50 @@ def draw_arms(function_id, cluster_positions, matrices, **kwargs):
     vmax = vmax + (vmax - vmin) * 0.2
     Z = Z.reshape(X.shape)
 
-    # Plot contour
-    ax = fig.add_subplot(fig_h, fig_w, 1)
-    ax.set_xlim([ boundary.min_bounds[0], boundary.max_bounds[0]])
-    ax.set_ylim([ boundary.min_bounds[1], boundary.max_bounds[1]])
+    margin = (boundary.max_bounds - boundary.min_bounds)*0.1
+    ax.set_xlim([ boundary.min_bounds[0] - margin[0], boundary.max_bounds[0] + margin[0] ])
+    ax.set_ylim([ boundary.min_bounds[1] - margin[1], boundary.max_bounds[1] + margin[1] ])
+    #ax.set_xlim([ boundary.min_bounds[0], boundary.max_bounds[0]])
+    #ax.set_ylim([ boundary.min_bounds[1], boundary.max_bounds[1]])
     cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
     fig.colorbar(cset, aspect = 20)
+
+    # Plot optimal solution as a big white 'X'
+    ax.scatter(optimal_pos[0], optimal_pos[1], color = 'w', marker = 'x', s = 100)
 
 
     # Plot scatter points in each arm
     colors = iter(scatter_cmap)
-    for positions, matrix in zip(cluster_positions, matrices):
-        color = next(colors)
-        ax.scatter(positions[:,0], positions[:,1], color = color, marker = 'o', s = 10)
-
-        # Plot borders on original boundary
-        subspace_border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
-        border = matrix.inverse_transform( subspace_border )
-        ax.plot(border[:, 0], border[:, 1], color = color)
-    
-    # Plot optimal solution as a big white 'X'
-    ax.scatter(optimal_pos[0], optimal_pos[1], color = 'w', marker = 'x', s = 100)
-
-    '''
-    # Plot from each arm's perspective
-    for i, (positions, matrix) in enumerate(zip(cluster_positions, matrices)):
-
-        color = scatter_cmap[i]
-        ax = fig.add_subplot(fig_h, fig_w, i + 2)
-        ax.set_xlim([ -0.01, 1.01])
-        ax.set_ylim([ -0.01, 1.01])
-
-        # Plot contour
-        (X, Y) = np.meshgrid( np.arange(0, 1.01, 0.01), np.arange(0, 1.01, 0.01) )
-
-        mesh_positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel())]
-        original_positions = matrix.inverse_transform(mesh_positions)
-
-        Z = np.array( [ function(mesh_position) for mesh_position in original_positions ] )
-        Z = Z.reshape(X.shape)
-
-        cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+    for arm in arms:
+        arm.draw( ax, next(colors), on_subspace=False )
 
 
-        # Plot scatter points in each arm
-        trans_X = matrix.transform( positions )
-        ax.scatter(trans_X[:, 0], trans_X[:, 1], color = color, marker = 'o', s = 10)
 
-        # Plot border
-        cord = np.array([ [0, 0], [1, 0], [1, 1], [0, 1]])
-        ax.plot(cord[[0, 1, 2, 3, 0], 0], cord[[0, 1, 2, 3, 0], 1], color = color)
-    ''' 
+    if plot_subspace:
+        # Plot from each arm's perspective
+        #for i, (positions, matrix) in enumerate(zip(cluster_positions, matrices)):
+        for i, arm in enumerate(arms):
+
+            color = scatter_cmap[i]
+            ax_sub = fig.add_subplot(fig_h, fig_w, i + 2)
+            ax_sub.set_xlim([ -0.01, 1.01])
+            ax_sub.set_ylim([ -0.01, 1.01])
+
+            # Plot contour
+            (X, Y) = np.meshgrid( np.arange(0, 1.01, 0.01), np.arange(0, 1.01, 0.01) )
+
+            mesh_positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel())]
+            original_positions = arm.matrix.inverse_transform(mesh_positions)
+
+            Z = np.array( [ function(mesh_position) for mesh_position in original_positions ] )
+            Z = Z.reshape(X.shape)
+
+            cset = ax_sub.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+
+
+            # Plot scatter points in each arm
+            arm.draw( ax_sub, color, on_subspace=True )
+
 
     fig.tight_layout()
     st = fig.suptitle(fig_title, fontsize = 16)
@@ -394,13 +446,14 @@ def draw_arms(function_id, cluster_positions, matrices, **kwargs):
 
 
 def testArm(plot=False):
+
     from optproblems.cec2005 import CEC2005
     from sklearn.cluster import KMeans
     from boundary import Boundary
 
-    function_id = 11 
+    function_id = 11
     dimension = 2 
-    n_points = 6 
+    n_points = 12 
     init_num_points = 120
     n_sample = 100 * dimension
     k = 4
@@ -423,21 +476,37 @@ def testArm(plot=False):
 
     it = 0
     should_terminate = False
-    cluster_positions = []
-    cluster_fitnesses = []
-    matrices = []
+
+
+    init_arms = []
     for i in range(k):
         indices = np.where(labels==i)[0]
-        cluster_positions.append( positions[indices] )
-        cluster_fitnesses.append( fitnesses[indices] )
-        matrices.append( Matrix( positions[indices] ) )
+        arm = Arm( function,
+                   n_points,
+                   positions[indices],
+                   fitnesses[indices],
+                   algo_type='ACOR',
+                   exclude = [],
+                   matrix = Matrix( positions[indices] ),
+                   min_bounds = min_bounds,
+                   max_bounds = max_bounds
+                  )
+        init_arms.append(arm)
 
-    if plot: draw_arms( function_id, cluster_positions, matrices, fig_name='initialize.png' )
+    if plot: draw_arms( function_id, init_arms, fig_name='initialize.png' )
 
 
+    new_matrix = deepcopy(init_arms[0].matrix)
+    translate = np.array([[1,0,-0.5],
+                          [0,1,0.5],
+                          [0,0,1]])
+    new_matrix.matrix = np.dot(new_matrix.matrix, translate) 
+    init_arms[0].transform(new_matrix) 
+    if plot: draw_arms( function_id, init_arms, fig_name='transformed.png' )
     
      
-    arms = []
+    '''
+    arms = deepcopy(init_arms)
     opt_matrices = deepcopy( matrices )
     trans_samples = np.random.uniform(0, 1, size=(n_sample, dimension))
     for i in range(k):
@@ -474,7 +543,6 @@ def testArm(plot=False):
     if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimized.png' )
 
 
-    #'''
     best_fitness = np.inf
     best_position = None
 
@@ -498,18 +566,16 @@ def testArm(plot=False):
                                    fig_name='it_%d_before_translate.png' % it )
 
                     ######################################################
-                    '''
-                    positions = arm.get_positions()
-                    fitnesses = arm.get_fitnesses()
-                    best = positions[ np.argmin(fitnesses) ]
-                    if not (position == best).all():
-                        print(fitness, position)
-                        print(np.amin(fitnesses), best)
-                        print()
-                        for f, p in zip(fitnesses, positions):
-                            print(f, p)
-                        input()
-                    '''
+                    #positions = arm.get_positions()
+                    #fitnesses = arm.get_fitnesses()
+                    #best = positions[ np.argmin(fitnesses) ]
+                    #if not (position == best).all():
+                    #    print(fitness, position)
+                    #    print(np.amin(fitnesses), best)
+                    #    print()
+                    #    for f, p in zip(fitnesses, positions):
+                    #        print(f, p)
+                    #    input()
                     ######################################################
                     
                     arm.translate_to( position )
@@ -547,7 +613,7 @@ def testArm(plot=False):
                    [ arm.get_positions() for arm in arms ],
                    [ arm.matrix for arm in arms ],
                    fig_name='it_%d.png' % it )
-    #'''
+    '''
 
 if __name__ == '__main__':
     #testArm()
