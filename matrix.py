@@ -6,9 +6,12 @@ from skimage.transform import ProjectiveTransform
 import numpy as np
 
 class Matrix:
-    def __init__(self, positions):
+    def __init__(self, positions, matrix=None):
         self.delta = 1e-08
-        self.matrix = self.init_matrix( np.array(positions) )
+        if matrix is None:
+            self.matrix = self.init_matrix( np.array(positions) )
+        else:
+            self.matrix = matrix
 
     
     def init_matrix(self, positions):
@@ -64,7 +67,6 @@ class Matrix:
 
         return trans_positions
 
-    
 
 if __name__ == '__main__':
 
