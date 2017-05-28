@@ -32,7 +32,7 @@ class Arm:
             best_position = init_positions[best_index] 
 
             self.matrix = Matrix(init_positions)
-            self.update_matrix(best_position, init_positions, exclude)
+            self.matrix.optimize(best_position, init_positions, exclude)
         else:
             self.matrix = matrix
         
@@ -105,7 +105,7 @@ class Arm:
 
 
     def reached_border(self, r = 0.4):
-
+        return True
         #'''
         trans_positions = self.algo.get_positions()
         best_index = np.argmax(self.algo.get_fitnesses())  
@@ -156,7 +156,7 @@ class Arm:
     def stop(self):
         return self.algo.stop()
 
-
+    
     def update_matrix(self, best, include, exclude):
 
 
@@ -338,7 +338,6 @@ class Arm:
 
 def draw_arms(function_id, arms, **kwargs):
 
-    #assert len(cluster_positions) == len(matrices)
     import os
     from optproblems.cec2005 import CEC2005
     import matplotlib.pyplot as plt
@@ -381,17 +380,14 @@ def draw_arms(function_id, arms, **kwargs):
     Z = np.array( [ function(position) for position in positions ] )
 
     # Reset colormap to get rid of extreme colors
-    vmin = min(Z)
-    vmax = max(Z)
-    vmin = vmin - (vmax - vmin) * 0.2
-    vmax = vmax + (vmax - vmin) * 0.2
+    v_range = max(Z) - min(Z)
+    vmin = min(Z) - v_range * 0.2
+    vmax = max(Z) + v_range * 0.2
     Z = Z.reshape(X.shape)
 
     margin = (boundary.max_bounds - boundary.min_bounds)*0.1
     ax.set_xlim([ boundary.min_bounds[0] - margin[0], boundary.max_bounds[0] + margin[0] ])
     ax.set_ylim([ boundary.min_bounds[1] - margin[1], boundary.max_bounds[1] + margin[1] ])
-    #ax.set_xlim([ boundary.min_bounds[0], boundary.max_bounds[0]])
-    #ax.set_ylim([ boundary.min_bounds[1], boundary.max_bounds[1]])
     cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
     fig.colorbar(cset, aspect = 20)
 
@@ -408,7 +404,6 @@ def draw_arms(function_id, arms, **kwargs):
 
     if plot_subspace:
         # Plot from each arm's perspective
-        #for i, (positions, matrix) in enumerate(zip(cluster_positions, matrices)):
         for i, arm in enumerate(arms):
 
             color = scatter_cmap[i]
@@ -445,6 +440,114 @@ def draw_arms(function_id, arms, **kwargs):
 
 
 
+
+
+def draw_optimization(function_id, cluster_positions, matrices, **kwargs):
+
+    assert len(cluster_positions) == len(matrices)
+    import os
+    from optproblems.cec2005 import CEC2005
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    from boundary import Boundary
+
+    # Parameters
+    dim = 2
+    function = CEC2005(dim)[function_id].objective_function
+    optimal_pos = CEC2005(dim)[function_id].get_optimal_solutions()[0].phenome
+    boundary = Boundary(dim, function_id)
+
+    k = len(matrices)
+    inch_size = 4
+    #fig_w = k + 1
+    fig_w = 1.2
+    fig_h = 1
+    fig = plt.figure(figsize = (fig_w * inch_size, fig_h * inch_size))
+    cmap = cm.coolwarm
+    scatter_cmap = cm.jet(np.linspace(0.1, 0.9, k))
+    angle = kwargs.get('angle', 240)
+    rotate = kwargs.get('rotate', False)
+    fig_name = kwargs.get('fig_name', None)
+    fig_title = kwargs.get('fig_title', 'F%d'%(function_id+1))
+    fig_dir = kwargs.get('fig_dir', 'test_arms')
+    if not os.path.exists(fig_dir):
+        os.makedirs(fig_dir)
+
+    print('ploting %s...' % fig_name)
+
+
+    # Get Mesh Solutions for contour
+    step = (boundary.max_bounds[0] - boundary.min_bounds[0]) / 100
+    X = np.arange(boundary.min_bounds[0], boundary.max_bounds[0] + step, step)
+    Y = np.arange(boundary.min_bounds[1], boundary.max_bounds[1] + step, step)
+    (X, Y) = np.meshgrid(X, Y)
+    positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel()) ]
+    Z = np.array( [ function(position) for position in positions ] )
+
+    # Reset colormap to get rid of extreme colors
+    vmin = min(Z)
+    vmax = max(Z)
+    vmin = vmin - (vmax - vmin) * 0.2
+    vmax = vmax + (vmax - vmin) * 0.2
+    Z = Z.reshape(X.shape)
+
+    # Plot contour
+    ax = fig.add_subplot(fig_h, fig_w, 1)
+    margin = (boundary.max_bounds - boundary.min_bounds)*0.1
+    ax.set_xlim([ boundary.min_bounds[0] - margin[0], boundary.max_bounds[0] + margin[0] ])
+    ax.set_ylim([ boundary.min_bounds[1] - margin[1], boundary.max_bounds[1] + margin[1] ])
+    cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+    fig.colorbar(cset, aspect = 20)
+
+
+    # Plot scatter points in each arm
+    colors = iter(scatter_cmap)
+    for positions, matrix in zip(cluster_positions, matrices):
+        color = next(colors)
+        ax.scatter(positions[:,0], positions[:,1], color = color, marker = 'o', s = 10)
+
+        # Plot borders on original boundary
+        subspace_border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
+        border = matrix.inverse_transform( subspace_border )
+        ax.plot(border[:, 0], border[:, 1], color = color)
+    
+    # Plot optimal solution as a big white 'X'
+    ax.scatter(optimal_pos[0], optimal_pos[1], color = 'w', marker = 'x', s = 100)
+
+    '''
+    # Plot from each arm's perspective
+    for i, (positions, matrix) in enumerate(zip(cluster_positions, matrices)):
+        color = scatter_cmap[i]
+        ax = fig.add_subplot(fig_h, fig_w, i + 2)
+        ax.set_xlim([ -0.01, 1.01])
+        ax.set_ylim([ -0.01, 1.01])
+        # Plot contour
+        (X, Y) = np.meshgrid( np.arange(0, 1.01, 0.01), np.arange(0, 1.01, 0.01) )
+        mesh_positions = [ [x, y] for x, y in zip(X.ravel(), Y.ravel())]
+        original_positions = matrix.inverse_transform(mesh_positions)
+        Z = np.array( [ function(mesh_position) for mesh_position in original_positions ] )
+        Z = Z.reshape(X.shape)
+        cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+        # Plot scatter points in each arm
+        trans_X = matrix.transform( positions )
+        ax.scatter(trans_X[:, 0], trans_X[:, 1], color = color, marker = 'o', s = 10)
+        # Plot border
+        cord = np.array([ [0, 0], [1, 0], [1, 1], [0, 1]])
+        ax.plot(cord[[0, 1, 2, 3, 0], 0], cord[[0, 1, 2, 3, 0], 1], color = color)
+    ''' 
+
+    fig.tight_layout()
+    st = fig.suptitle(fig_title, fontsize = 16)
+    st.set_y(0.95)
+    fig.subplots_adjust(top = 0.85)
+    if fig_name is not None:
+        plt.savefig( '%s/%s' % (fig_dir,fig_name) )
+    else:
+        plt.show()
+        input('Press Enter to continue...')
+    plt.close(fig)
+
+
 def testArm(plot=False):
 
     from optproblems.cec2005 import CEC2005
@@ -456,7 +559,7 @@ def testArm(plot=False):
     n_points = 12 
     init_num_points = 120
     n_sample = 100 * dimension
-    k = 4
+    k = 3
     function = CEC2005(dimension)[function_id].objective_function
     init_min_bounds = Boundary(dimension, function_id).init_min_bounds
     init_max_bounds = Boundary(dimension, function_id).init_max_bounds
@@ -478,7 +581,7 @@ def testArm(plot=False):
     should_terminate = False
 
 
-    init_arms = []
+    arms = []
     for i in range(k):
         indices = np.where(labels==i)[0]
         arm = Arm( function,
@@ -491,58 +594,58 @@ def testArm(plot=False):
                    min_bounds = min_bounds,
                    max_bounds = max_bounds
                   )
-        init_arms.append(arm)
+        arms.append(arm)
 
-    if plot: draw_arms( function_id, init_arms, fig_name='initialize.png' )
+    if plot: draw_arms( function_id, arms, fig_name='initialize.png' )
 
 
-    new_matrix = deepcopy(init_arms[0].matrix)
+    '''
+    new_matrix = deepcopy(arms[0].matrix)
     translate = np.array([[1,0,-0.5],
                           [0,1,0.5],
                           [0,0,1]])
     new_matrix.matrix = np.dot(new_matrix.matrix, translate) 
-    init_arms[0].transform(new_matrix) 
-    if plot: draw_arms( function_id, init_arms, fig_name='transformed.png' )
-    
+    arms[0].transform(new_matrix) 
+    if plot: draw_arms( function_id, arms, fig_name='transformed.png' )
+    ''' 
      
-    '''
-    arms = deepcopy(init_arms)
-    opt_matrices = deepcopy( matrices )
     trans_samples = np.random.uniform(0, 1, size=(n_sample, dimension))
     for i in range(k):
-        exclude = []
+
+        indices = np.where(labels==i)[0]
+        argmax = np.argmax( fitnesses[indices] ) 
+        best = positions[indices][argmax]
+
         opt_points = []
+        exclude = []
         for j in range(k):
-            if i == j: 
-                opt_points.append(cluster_positions[i])
-            else:
-                #exclude.extend( cluster_positions[j] )
-                samples = opt_matrices[j].inverse_transform( trans_samples )
+            if i != j: 
+                samples = arms[j].matrix.inverse_transform( trans_samples )
                 exclude.extend( samples )
-                opt_points.append(samples)
+                opt_points.append( samples )
+            else:
+                opt_points.append(positions[indices])
 
         exclude = np.array(exclude)
-        arm = Arm( function,
-                   n_points,
-                   cluster_positions[i],
-                   cluster_fitnesses[i],
-                   algo_type='CMA',
-                   exclude = exclude,
-                   min_bounds = min_bounds,
-                   max_bounds = max_bounds
-                  )
-        arms.append(arm)
-
-        opt_points[i] = arms[i].get_positions() 
-        opt_matrices[i] = arms[i].matrix
-
-        if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimize_%d.png'%i )
-
-    opt_points = [ arm.get_positions() for arm in arms ]
-    opt_matrices = [ arm.matrix for arm in arms ]
-    if plot: draw_arms( function_id, opt_points, opt_matrices, fig_name='optimized.png' )
 
 
+        print('optimizing matrix of arm %d ...' % i )
+        arms[i].matrix.optimize( best, 
+                                 positions[indices], 
+                                 exclude, 
+                                 min_bounds,
+                                 max_bounds,
+                                 max_evaluation_num = 10000 ) 
+
+        if plot: draw_optimization( function_id, 
+                                    opt_points,
+                                    [arm.matrix for arm in arms],
+                                    fig_name='optimize_%d.png'%i )
+
+    if plot: draw_arms( function_id, arms, fig_name='optimized.png' )
+
+
+    '''
     best_fitness = np.inf
     best_position = None
 
