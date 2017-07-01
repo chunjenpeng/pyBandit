@@ -1,3 +1,4 @@
+from collections import Counter
 from itertools import combinations
 from operator import itemgetter
 from scipy.stats import rankdata
@@ -74,6 +75,35 @@ def hierarchical_clustering(positions, fitnesses):
         if not merged:
             label += 1
 
+    # Merge all clusters.size < 2 with the label nearest to the best_fitness position
+    best_label_index = [None] * label # number of labels
+    for i, label in enumerate(labels):
+        if best_label_index[label] is None:
+            best_label_index[label] = i
+        else:
+            if fitnesses[i] < fitnesses[ best_label_index[label] ]:
+                best_label_index[label] = i
+
+    counter = Counter(labels)  
+    should_merge = [ label for label in counter.elements() if counter[label] <= 2 ]
+    for label in should_merge:
+        index = best_label_index[label]
+        best_position = positions[index]
+        nearest_distance = np.inf
+        nearest_label = label
+        for i, position in enumerate(positions):
+            if labels[i] != label:
+                distance = np.linalg.norm( best_position - position )
+                if distance < nearest_distance:
+                    nearest_label = labels[i]
+
+        max_label = max(labels)
+        for i, l in enumerate(labels):
+            if l == label:
+                labels[i] = nearest_label 
+            elif l == max_label:
+                labels[i] = label
+
     #print(directed_edges)
     #print(labels)
     return np.array(labels)
@@ -83,14 +113,15 @@ def hierarchical_clustering(positions, fitnesses):
 def weighted_gaussian(positions, fitnesses):
 
     # Inverse ranks so that min fitness has max value of rank
-    fitnesses = -1*np.array(fitnesses)
-    inverse_ranks = rankdata(fitnesses, method='ordinal')
-    weights = 1.0/sum(inverse_ranks) * inverse_ranks
+    #fitnesses = -1*np.array(fitnesses)
+    #inverse_ranks = rankdata(fitnesses, method='ordinal')
+    #weights = 1.0/sum(inverse_ranks) * inverse_ranks
     #print(weights)
 
-    #n = len(fitnesses)
-    #weights = np.log(n + 0.5) - np.log(inverse_ranks)
-    #weights = weights / sum(weights)
+    n = len(fitnesses)
+    ranks = rankdata(fitnesses, method='ordinal')
+    weights = np.log(n + 0.5) - np.log(ranks)
+    weights = weights / sum(weights)
     #print(weights)
     #print(positions) 
 
@@ -177,6 +208,13 @@ def calculate_MDL_scores( positions, fitnesses, labels ):
 def clustering(positions, fitnesses):
 
     labels = hierarchical_clustering( positions, fitnesses )
+    labels = trim_by_MDL( positions, fitnesses, labels ) 
+
+    return labels
+
+
+def trim_by_MDL( positions, fitnesses, labels ):
+
     k = max(labels) + 1
 
     clusters_positions, clusters_fitnesses = [], []
@@ -189,7 +227,6 @@ def clustering(positions, fitnesses):
 
     #draw( clusters_positions, clusters_fitnesses, obj, fig_name = 'test.png' )
 
-
     original_score = MDL(clusters_positions, clusters_fitnesses)
 
 
@@ -197,9 +234,9 @@ def clustering(positions, fitnesses):
     merge_index = np.unravel_index(scores.argmin(), scores.shape) 
     min_score = scores[merge_index] 
     print(labels)
-    print('scores:\n', scores) 
-    print('min_score:', scores[merge_index])
-    print('original_score:', original_score)
+    #print('scores:\n', scores) 
+    #print('min_score:', scores[merge_index])
+    #print('original_score:', original_score)
 
    
     while min_score < original_score:
@@ -215,9 +252,9 @@ def clustering(positions, fitnesses):
         scores = calculate_MDL_scores( positions, fitnesses, labels )
         merge_index = np.unravel_index(scores.argmin(), scores.shape) 
         min_score = scores[merge_index]
-        print('scores:\n', scores) 
-        print('min_score:', scores[merge_index])
-        print('original_score:', original_score)
+        #print('scores:\n', scores) 
+        #print('min_score:', scores[merge_index])
+        #print('original_score:', original_score)
 
     return labels
 
@@ -311,12 +348,17 @@ def draw( clusters_positions, clusters_fitnesses, obj, fig_name, **kwargs ):
     plt.close(fig)
 
 
-if __name__ == '__main__':
+def manhalanobis_distance(x, mean, cov):
+    assert len(x) == len(mean) == len(cov) == len(cov[0])
+    xm = x - mean
+    inverse_cov = np.linalg.inv(cov)
+    return xm.dot(inverse_cov).dot(xm.T)
 
+
+def run(function_id):
     from boundary import Boundary
-    function_id = 10 
     dimension = 2
-    n_points = 200
+    n_points = 500
     obj = CEC2005(dimension)[function_id].objective_function
     min_bounds = Boundary(dimension, function_id).min_bounds
     max_bounds = Boundary(dimension, function_id).max_bounds
@@ -339,7 +381,9 @@ if __name__ == '__main__':
         clusters_positions.append( positions[indices] ) 
         clusters_fitnesses.append( fitnesses[indices] ) 
 
-    draw( clusters_positions, clusters_fitnesses, obj, fig_name = 'init.png',
+    draw( clusters_positions, clusters_fitnesses, obj, 
+          #fig_name = '2017_06_19_MDL_selection/F%d_init.png'%(function_id+1),
+          fig_name = 'F%d_init.png'%(function_id+1),
           xlim = [ min_bounds[0], max_bounds[0] ],
           ylim = [ min_bounds[1], max_bounds[1] ] )
 
@@ -350,16 +394,38 @@ if __name__ == '__main__':
 
     clusters_positions, clusters_fitnesses = [], []
     for i in range(k):
-        #print(i)
+        print(i)
         indices = np.where(labels==i)[0]
-        #print(indices)
         clusters_positions.append( positions[indices] ) 
         clusters_fitnesses.append( fitnesses[indices] ) 
 
-    draw( clusters_positions, clusters_fitnesses, obj, fig_name = 'test.png',
+        mean, cov = weighted_gaussian( positions[indices], fitnesses[indices] ) 
+        distances = [ manhalanobis_distance(x, mean, cov) for x in positions[indices] ]
+        idx = np.argsort(distances)
+        for i in idx:
+            print( positions[indices][i], fitnesses[indices][i], distances[i] )
+
+        h = -fitnesses[indices][idx] - min(-fitnesses[indices])
+        h = h/sum(h)
+        print(h)
+        #n, bins, patches = plt.hist(h, len(h)
+
+        print()
+
+
+    draw( clusters_positions, clusters_fitnesses, obj, 
+          #fig_name = '2017_06_19_MDL_selection/F%d_MDL_GMM.png'%(function_id+1),
+          fig_name = 'F%d_MDL_GMM.png'%(function_id+1),
           xlim = [ min_bounds[0], max_bounds[0] ],
           ylim = [ min_bounds[1], max_bounds[1] ] )
 
+
+if __name__ == '__main__':
+    function_id = 19 
+    run(function_id)
+
+    #for function_id in range(25):
+    #    run(function_id)
 
 
 

@@ -18,6 +18,7 @@ def draw( obj, fig_name, **kwargs ):
     problem = Problem( obj )
     angle = kwargs.get( 'angle', 240 )
     optimal = kwargs.get( 'optimal', None )
+    scatter = kwargs.get( 'scatter', None )
     xlim = kwargs.get( 'xlim', [-100,100] )
     ylim = kwargs.get( 'ylim', [-100,100] )
     fig_title = kwargs.get( 'fig_title', fig_name )
@@ -60,8 +61,15 @@ def draw( obj, fig_name, **kwargs ):
     if optimal:
         ax.scatter( optimal[0], optimal[1], color='w', marker='x', s=100 )
 
+    if scatter is not None:
+        color = 'r'
+        ax.scatter( scatter[:,0], scatter[:,1], color=color, s=10 )
+
+
     plt.savefig('%s/%s' % (fig_dir, fig_name))
     plt.close(fig)
+
+
 
 def manhalanobis_distance( x, mean, cov ):
     assert len(x) == len(mean) == len(cov) == len(cov[0])
@@ -69,18 +77,80 @@ def manhalanobis_distance( x, mean, cov ):
     inverse_cov = np.linalg.inv(cov)
     return xm.dot(inverse_cov).dot(xm.T)
 
-
-obj = CEC2005(2)[8].objective_function
-xlim = [1.5 ,2.5]
+function_id = 8
+dimension = 2
+obj = CEC2005(dimension)[function_id].objective_function
+xlim = [1.5 ,3.25]
 ylim = [-2, -1]
 positions = np.random.uniform([xlim[0], ylim[0]], [xlim[1], ylim[1]], size=(20,2))
-#draw( obj, 'test.png', xlim=xlim, ylim=ylim )
+fitnesses = np.array([ obj(x) for x in positions ])
+draw( obj, 'test.png', xlim=xlim, ylim=ylim, scatter = positions )
+from cluster import weighted_gaussian
+mean, cov = weighted_gaussian( positions, fitnesses )
+from scipy.stats import multivariate_normal
+rv = multivariate_normal(mean, cov)
+from cluster import clustering
+labels = clustering(positions, fitnesses)
+print('mean:', mean)
+print('cov:\n', cov)
+print(labels)
 
-fig = plt.figure(figsize=plt.figaspect(1))
-ax = fig.add_subplot(111, aspect=0.5)
+
+x, y = np.mgrid[xlim[0]:xlim[1]:((xlim[1]-xlim[0])/100), ylim[0]:ylim[1]:((ylim[1]-ylim[0])/100)] 
+pos = np.empty(x.shape+(2,))
+pos[:,:,0] = x
+pos[:,:,1] = y
+plt.contourf(x, y, rv.pdf(pos))
+plt.savefig('contourf.png')
+plt.close()
+
+
+new_p = np.array([2.35, -1.6])
+p1 = np.random.uniform([1.75, -1.7], [2.05,-1.4], size=(10,2))
+p2 = np.random.uniform([2.75, -1.7], [3.05,-1.4], size=(10,2))
+positions = np.concatenate((p1, p2))
+print(positions.shape)
+#positions[0] = np.random.uniform([xlim[0], ylim[0]], [xlim[1], ylim[1]], size=(1,2))
+draw( obj, 'test1.png', xlim=xlim, ylim=ylim, scatter = positions )
+fitnesses = np.array([ obj(x) for x in positions ])
+for pos in positions:
+    print(rv.pdf(pos), rv.logpdf(pos))
+new_mean, new_cov = weighted_gaussian( positions, fitnesses )
+print('mean:', new_mean)
+print('cov:\n', new_cov)
+labels = clustering(positions, fitnesses)
+print(labels)
 
 from scipy import stats
+wilks_statistics = len(positions) * manhalanobis_distance( new_mean, mean, cov )
+dof = dimension
+p_value = stats.chisqprob(wilks_statistics, dof)
+print(p_value)
 
+wilks_statistics = manhalanobis_distance( new_p, mean, cov )
+dof = dimension
+p_value = stats.chisqprob(wilks_statistics, dof)
+print(p_value)
+#fig = plt.figure(figsize=plt.figaspect(1))
+#ax = fig.add_subplot(111, aspect=0.5)
+
+cm = mean - new_mean
+inverse_cov = np.linalg.inv( 0.5*(cov + new_cov) )
+z = cm.dot(inverse_cov).dot(cm.T)
+p_value = stats.chisqprob(z, dof)
+print(p_value)
+
+rv = multivariate_normal(new_mean, new_cov)
+x, y = np.mgrid[xlim[0]:xlim[1]:((xlim[1]-xlim[0])/100), ylim[0]:ylim[1]:((ylim[1]-ylim[0])/100)] 
+pos = np.empty(x.shape+(2,))
+pos[:,:,0] = x
+pos[:,:,1] = y
+plt.contourf(x, y, rv.pdf(pos))
+plt.savefig('contourf1.png')
+plt.close()
+
+
+'''
 a, b = 2, 2
 x = np.linspace(stats.beta.ppf(0, a, b),
                 stats.beta.ppf(1, a, b), 100)
@@ -105,7 +175,7 @@ new_Pr = m*Pr + c
 errors = F - new_Pr
 print(errors)
 std = np.std(errors)
-yerr = [3*std] * len(errors)
+yerr = [2*std] * len(errors)
 ax.errorbar(x, new_Pr, yerr=yerr, fmt='o') 
 
 x = np.linspace(stats.beta.ppf(0, a, b),
@@ -120,7 +190,6 @@ plt.close(fig)
 
 
 
-'''
 fitnesses = np.array([ obj(x) for x in x1 ])
 
 for x, f in zip(x1, fitnesses):

@@ -1,6 +1,7 @@
 from copy import deepcopy
 from operator import attrgetter
 from scipy.optimize import fmin_tnc
+from scipy.stats import chisqprob, multivariate_normal
 import numpy as np 
 
 from OnePlusOne_ES import OnePlusOne_ES
@@ -8,6 +9,7 @@ from CMAES import CMA
 from SPSO2011 import PSO
 from ACOR import ACOR
 from matrix import Matrix
+from cluster import weighted_gaussian, manhalanobis_distance        
 
 
 class Arm:
@@ -32,12 +34,18 @@ class Arm:
             best_position = init_positions[best_index] 
 
             self.matrix = Matrix(init_positions)
-            self.matrix.optimize(best_position, init_positions, exclude)
+            self.matrix.optimize( best_position, 
+                                  init_positions, 
+                                  exclude, 
+                                  self.min_bounds,
+                                  self.max_bounds,
+                                  max_evaluation_num = 10000 ) 
         else:
             self.matrix = matrix
         
         # Resize population == n_points
         positions, fitnesses = self.resize_population( init_positions, init_fitnesses )
+        self.mean, self.cov = weighted_gaussian( positions, fitnesses )
 
         # Transform points onto subspace
         trans_positions = self.matrix.transform(positions) 
@@ -46,8 +54,11 @@ class Arm:
         trans_positions = np.clip( trans_positions, 0, 1 )
 
         # Initialize algorithm
-        self.init_algo( trans_positions, fitnesses )
+        self.init_algo( trans_positions, fitnesses ) 
 
+
+    def update_model(self):
+        self.mean, self.cov = weighted_gaussian( self.get_positions(), self.get_fitnesses() ) 
 
 
     def resize_population(self, init_positions, init_fitnesses):
@@ -93,9 +104,11 @@ class Arm:
                             init_fitnesses=init_fitnesses )
 
 
+
     def transform_obj(self, X):
         original_X = self.matrix.inverse_transform([X])[0]
         return self.obj(original_X)
+
 
 
     def pull(self):
@@ -104,13 +117,60 @@ class Arm:
         return self.matrix.inverse_transform([best_position])[0], best_fitness
 
 
-    def reached_border(self, r = 0.4):
-        return True
+
+    def transform(self, new_matrix):
+        self.algo.transform( self.matrix, new_matrix )
+        self.matrix = deepcopy(new_matrix)
+
+
+
+    def draw(self, ax, color, on_subspace=False):
+
+        # Plot borders on original search space
+        border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
+        if not on_subspace:
+            border = self.matrix.inverse_transform( border )
+        ax.plot(border[:, 0], border[:, 1], color = color)
+
+        # Plot algorithm
+        if not on_subspace:
+            self.algo.draw( ax, color, self.matrix )
+        else:
+            self.algo.draw( ax, color )
+
+
+    def reject_model(self):
+
+        original_positions = self.get_positions()
+        original_fitnesses = self.get_fitnesses()
+        '''
+        from cluster import clustering
+        labels = clustering( original_positions, original_fitnesses )
+        if any(labels) > 0:
+            print(labels)
+        return any(labels) > 0
+        '''    
+
+        mean, cov = weighted_gaussian( original_positions, original_fitnesses )
+        wilks_statistics = self.n_points * manhalanobis_distance( mean, self.mean, self.cov )
+        dof = self.dimension
+        p_value = chisqprob( wilks_statistics, dof )
+        print('%f'%p_value, mean, self.mean )
+
+        return p_value < 0.05
+
+    # Should DELETE
+    ########################################################################
+    def reached_border(self, r = 0.25):
         #'''
+        r = 0.3536
         trans_positions = self.algo.get_positions()
         best_index = np.argmax(self.algo.get_fitnesses())  
         trans_best_position = trans_positions[best_index]
         dist_best_to_center = np.linalg.norm( trans_best_position - 0.5 )
+        if dist_best_to_center > r:
+            best_position = self.matrix.inverse_transform([trans_best_position])[0]
+            print(best_position, trans_best_position, dist_best_to_center)
         return (dist_best_to_center > r)
         #'''
 
@@ -126,6 +186,7 @@ class Arm:
            ((trans_mean_position < 2.0*margin).any() or (trans_mean_position > 1.0-2.0*margin).any()):
             return True
         return False
+    ########################################################################
 
 
     def translate_to(self, original_best_position):
@@ -148,15 +209,19 @@ class Arm:
         self.init_algo( trans_positions, fitnesses )
 
 
+
     def get_positions(self):
         return self.matrix.inverse_transform( self.algo.get_positions() )
     def get_fitnesses(self):
         return self.algo.get_fitnesses()
 
+
     def stop(self):
         return self.algo.stop()
 
     
+
+    # Should Remove...
     def update_matrix(self, best, include, exclude):
 
 
@@ -313,28 +378,6 @@ class Arm:
 
 
 
-    def transform(self, new_matrix):
-        self.algo.transform( self.matrix, new_matrix )
-        self.matrix = deepcopy(new_matrix)
-
-
-
-    def draw(self, ax, color, on_subspace=False):
-
-        # Plot borders on original search space
-        border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
-        if not on_subspace:
-            border = self.matrix.inverse_transform( border )
-        ax.plot(border[:, 0], border[:, 1], color = color)
-
-        # Plot algorithm
-        if not on_subspace:
-            self.algo.draw( ax, color, self.matrix )
-        else:
-            self.algo.draw( ax, color )
-
-
-        
 
 def draw_arms(function_id, arms, **kwargs):
 
@@ -385,7 +428,8 @@ def draw_arms(function_id, arms, **kwargs):
     vmax = max(Z) + v_range * 0.2
     Z = Z.reshape(X.shape)
 
-    margin = (boundary.max_bounds - boundary.min_bounds)*0.1
+    #margin = (boundary.max_bounds - boundary.min_bounds)*0.1
+    margin = (boundary.max_bounds - boundary.min_bounds)*0.0
     ax.set_xlim([ boundary.min_bounds[0] - margin[0], boundary.max_bounds[0] + margin[0] ])
     ax.set_ylim([ boundary.min_bounds[1] - margin[1], boundary.max_bounds[1] + margin[1] ])
     cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
@@ -493,7 +537,8 @@ def draw_optimization(function_id, cluster_positions, matrices, **kwargs):
 
     # Plot contour
     ax = fig.add_subplot(fig_h, fig_w, 1)
-    margin = (boundary.max_bounds - boundary.min_bounds)*0.1
+    #margin = (boundary.max_bounds - boundary.min_bounds)*0.1
+    margin = (boundary.max_bounds - boundary.min_bounds)*0.0
     ax.set_xlim([ boundary.min_bounds[0] - margin[0], boundary.max_bounds[0] + margin[0] ])
     ax.set_ylim([ boundary.min_bounds[1] - margin[1], boundary.max_bounds[1] + margin[1] ])
     cset = ax.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
@@ -554,7 +599,7 @@ def testArm(plot=False):
     from sklearn.cluster import KMeans
     from boundary import Boundary
 
-    function_id = 11
+    function_id = 12
     dimension = 2 
     n_points = 12 
     init_num_points = 120
@@ -588,7 +633,7 @@ def testArm(plot=False):
                    n_points,
                    positions[indices],
                    fitnesses[indices],
-                   algo_type='ACOR',
+                   algo_type='PSO',
                    exclude = [],
                    matrix = Matrix( positions[indices] ),
                    min_bounds = min_bounds,
@@ -599,16 +644,7 @@ def testArm(plot=False):
     if plot: draw_arms( function_id, arms, fig_name='initialize.png' )
 
 
-    '''
-    new_matrix = deepcopy(arms[0].matrix)
-    translate = np.array([[1,0,-0.5],
-                          [0,1,0.5],
-                          [0,0,1]])
-    new_matrix.matrix = np.dot(new_matrix.matrix, translate) 
-    arms[0].transform(new_matrix) 
-    if plot: draw_arms( function_id, arms, fig_name='transformed.png' )
-    ''' 
-     
+
     trans_samples = np.random.uniform(0, 1, size=(n_sample, dimension))
     for i in range(k):
 
@@ -635,7 +671,7 @@ def testArm(plot=False):
                                  exclude, 
                                  min_bounds,
                                  max_bounds,
-                                 max_evaluation_num = 10000 ) 
+                                 max_evaluation_num = 1e4 ) 
 
         if plot: draw_optimization( function_id, 
                                     opt_points,
@@ -644,6 +680,16 @@ def testArm(plot=False):
 
     if plot: draw_arms( function_id, arms, fig_name='optimized.png' )
 
+
+
+    new_matrix = deepcopy(arms[0].matrix)
+    translate = np.array([[1,0,-0.5],
+                          [0,1,0.5],
+                          [0,0,1]])
+    new_matrix.matrix = np.dot(new_matrix.matrix, translate) 
+    arms[0].transform(new_matrix) 
+    if plot: draw_arms( function_id, arms, fig_name='transformed.png' )
+     
 
     '''
     best_fitness = np.inf
