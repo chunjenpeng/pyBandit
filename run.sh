@@ -34,7 +34,7 @@ echo "Using $totalNP processors..."
 
 for DIM in 2 #10 30 50
 do
-    for ALGO in "ACOR" "PSO" "CMA"
+    for ALGO in "ACOR" #"PSO" "CMA"
     do
         DIR=$DATA_PATH/$ALGO
         mkdir -p $DIR

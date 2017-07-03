@@ -75,6 +75,7 @@ class Bandit:
             
             # Check if need to update border
             if self.arms[best_arm].reject_model():
+
                 include = self.arms[best_arm].get_positions()
                 trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
                 exclude = []
@@ -125,11 +126,20 @@ class Bandit:
                     
                     labels = trim_by_MDL( positions, fitnesses, labels )
                     
+                    positions, fitnesses = np.array(positions), np.array(fitnesses)
                     cluster_positions, cluster_fitnesses = [], []
                     for i in range( max(labels)+1 ):
                         indices = np.where(labels == i)[0]
-                        cluster_positions.append(positions[indices])
-                        cluster_fitnesses.append(fitnesses[indices])
+                        try:
+                            cluster_positions.append(positions[indices])
+                            cluster_fitnesses.append(fitnesses[indices])
+                        except TypeError as e:
+                            print(e)
+                            print('labels:%d\n' % len(labels), labels)
+                            print('indices:%d\n' % len(indices),indices)
+                            print('fitnesses:%d\n' % len(fitnesses), fitnesses[indices])
+                            print('positions:%d\n' % len(positions), positions[indices])
+                            raise e 
     
                     
                     #if self.plot > 0: 
@@ -695,13 +705,13 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 50,
+    testBandit = TestBandit( n_points = 40,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
-                             plot = 100, 
+                             plot = 1000, 
                              fig_dir = '%s/F%d' % (fig_dir, function_id)
                             )
     testBandit.run() 

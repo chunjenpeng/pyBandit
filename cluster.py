@@ -158,11 +158,30 @@ def MDL(clusters_positions, clusters_fitnesses):
     # I: total number of points
     I = sum(len(c) for c in clusters_positions)
 
-    score = ( (J * (D**2 + 3*D + 2)/2) - 1) * np.log(I)/2
+    #score = ( (J * (D**2 + 3*D + 2)/2) - 1) * np.log(I)/2
+    score = J * (D**2 + 3*D + 2) * np.log(I)/2
 
 
     for positions, fitnesses in zip(clusters_positions, clusters_fitnesses):
 
+        # Original version (simplified)
+        mean, cov = weighted_gaussian(positions, fitnesses)
+        n = len(positions)
+
+        det = np.linalg.det( cov )
+        if det == 0:
+            det += 1e-10
+        score -= n*np.log(n*n/det)
+
+        #scale, det = 0.0, 0
+        #while det == 0:
+        #    # det is scale invariant, and must not be 0 
+        #    scale += 1.0
+        #    det = np.linalg.det( scale * cov )
+        #score -= n*np.log(n*n/det)
+
+
+        '''
         # alpha: number of points in each cluster / total number of points
         alpha = float(len(positions))/I
 
@@ -178,16 +197,6 @@ def MDL(clusters_positions, clusters_fitnesses):
 
         loglikelihood = np.apply_along_axis(calc_loglikelihood, 1, residuals)
 
-        # Original version (simplified)
-        scale, det = 0.0, 0
-        while det == 0:
-            # det is scale invariant, and must not be 0 
-            scale += 1.0
-            det = np.linalg.det( scale * cov )
-
-        n = len(positions)
-        score -= n*np.log(n*n/det)
-
         # Original version
         #score -= np.log(alpha)*len(loglikelihood) + sum(loglikelihood)
 
@@ -196,7 +205,7 @@ def MDL(clusters_positions, clusters_fitnesses):
 
         # V2
         #score -= np.log(alpha)*len(loglikelihood) + sum(np.log(weights)) + sum(loglikelihood)
-    
+        ''' 
     return score 
 
 

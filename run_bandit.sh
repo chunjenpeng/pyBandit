@@ -1,6 +1,6 @@
 #!/bin/bash
 
-JOBNAME=CMAES.py
+JOBNAME=bandit.py
 totalNP=$(nproc)
 
 if [ "$#" != "2" ]; then

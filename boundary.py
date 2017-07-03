@@ -9,6 +9,11 @@ class Boundary:
             self.max_bounds = np.array([600] * dim)
             self.init_min_bounds = np.array([0] * dim)
             self.init_max_bounds = np.array([600] * dim)
+        #elif function_id == 8:
+        #    self.min_bounds = np.array([0.5, -2])
+        #    self.max_bounds = np.array([2.5, 0])
+        #    self.init_min_bounds = np.array([0.5, -2])
+        #    self.init_max_bounds = np.array([2.5, 0])
         elif function_id == 24:
             self.min_bounds = np.array([-5] * dim)
             self.max_bounds = np.array([10] * dim)
