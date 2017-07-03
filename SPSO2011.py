@@ -196,6 +196,29 @@ class PSO:
         
 
 
+    def replace(self, indices, positions, fitnesses):
+
+        for i, x, fitness in zip(indices, positions, fitnesses):
+            v = [ np.random.uniform(self.min_bounds[d] - x[d], self.max_bounds[d] - x[d]) 
+                  for d in range(self.dimension) ] 
+            self.swarm[i] = Particle( fitness, np.array(x), np.array(v) )
+
+        # Update topology if the best know solution has not been improved
+        best = min(self.swarm, key = attrgetter('current.fitness'))
+        if best.current.fitness >= self.best_fitness:
+            self.topology = self.random_topology()
+        self.best_fitness = best.current.fitness
+
+        for p in self.swarm:
+            # Update previous_best
+            if p.current.fitness < p.previous_best.fitness:
+                p.previous_best = deepcopy(p.current)
+
+                # Update best of previous_best in neighborhood
+                if p.previous_best.fitness < p.previous_best_neighbor.fitness:
+                    p.previous_best_neighbor = deepcopy(p.previous_best)
+
+
     
     def sample_from_hypersphere(self, particle):
         x = particle.current.position
@@ -296,7 +319,7 @@ class PSO:
         U = velocities[:,0]
         V = velocities[:,1]
         #M = np.hypot(U, V)
-        Q = ax.quiver(X, Y, U, V, color='m', units='x', pivot='tip', scale=1)
+        Q = ax.quiver(X, Y, U, V, color=color, alpha=0.4, units='x', pivot='tip', scale=1)
     
         # Draw scatter
         ax.scatter(X, Y, color=color, s=10)

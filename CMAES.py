@@ -83,6 +83,18 @@ class CMA:
     
 
 
+    def replace(self, indices, positions, fitnesses):
+
+        for i, position, fitness in zip(indices, positions, fitnesses):
+            self.positions[i] = position
+            self.fitnesses[i] = fitness
+
+        _ = self.es.ask()
+        self.es.tell(self.positions, self.fitnesses)
+        self.update_count = 0
+
+
+
     def stop(self):
         return self.es.stop()
 
@@ -92,6 +104,20 @@ class CMA:
     
     def get_fitnesses(self):
         return self.fitnesses
+
+
+    def transform(self, inv_matrix, new_matrix):
+        
+        original_positions = inv_matrix.inverse_transform(self.positions)
+        self.positions = new_matrix.transform(original_positions)
+
+        mean = self.es.gp.pheno( self.es.mean, into_bounds=self.es.boundary_handler.repair)
+        original_mean = inv_matrix.inverse_transform( [mean] )[0]
+        x0 = new_matrix.transform([original_mean])[0]
+        self.es._set_x0(x0)
+        self.es.mean = self.es.gp.geno( self.es.x0,
+                                        from_bounds=self.es.boundary_handler.inverse,
+                                        copy_always=True )
 
 
     def draw(self, ax, color, matrix = None):
@@ -119,7 +145,7 @@ class CMA:
             vecs = matrix.inverse_transform( vecs )
 
         theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
-        for nstd in range(1,4):
+        for nstd in range(1,3):
             width, height = 2 * nstd * np.sqrt(abs(vals))
             ellip = Ellipse( xy = pos,
                              width = width, 

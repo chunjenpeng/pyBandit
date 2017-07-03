@@ -164,6 +164,18 @@ class ACOR:
         return (best_position, best_fitness)
     
 
+
+    def replace(self, indices, positions, fitnesses):
+
+        for i, position, fitness in zip(indices, positions, fitnesses):
+            self.archive[i,:-1] = position
+            self.archive[i,-1] = fitness
+
+        # Sort archive by fitness 
+        self.archive = self.archive[ np.argsort(self.archive[:,-1]) ]
+
+
+
     def transform(self, inv_matrix, new_matrix):
 
         original_positions = inv_matrix.inverse_transform( self.get_positions() )
@@ -173,6 +185,7 @@ class ACOR:
         np.clip( new_positions, self.min_bounds, self.max_bounds, out=new_positions )
 
         self.archive = np.concatenate((new_positions, self.get_fitnesses()[:,None]), axis=1)
+
 
 
     def stop(self):
