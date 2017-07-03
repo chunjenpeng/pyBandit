@@ -75,37 +75,52 @@ def hierarchical_clustering(positions, fitnesses):
         if not merged:
             label += 1
 
-    # Merge all clusters.size < 2 with the label nearest to the best_fitness position
-    best_label_index = [None] * label # number of labels
+    return np.array(labels)
+
+
+# Merge all clusters.size <= 2 with the label nearest to the best_fitness position
+def force_small_sample_clustering( labels, positions, fitnesses ): 
+
+    num_labels = max(labels) + 1
+    best_label_index = [ labels.index(l) for l in range(num_labels) ]
     for i, label in enumerate(labels):
-        if best_label_index[label] is None:
+        if fitnesses[i] < fitnesses[ best_label_index[label] ]:
             best_label_index[label] = i
-        else:
-            if fitnesses[i] < fitnesses[ best_label_index[label] ]:
-                best_label_index[label] = i
+
 
     counter = Counter(labels)  
-    should_merge = [ label for label in counter.elements() if counter[label] <= 2 ]
-    for label in should_merge:
-        index = best_label_index[label]
-        best_position = positions[index]
-        nearest_distance = np.inf
-        nearest_label = label
+    should_merge = {}
+    for label, count in counter.items():
+        if count > 2: continue
+
+        best_position = positions[ best_label_index[label] ]
+        nearest_distance, nearest_label = np.inf, label
+
         for i, position in enumerate(positions):
             if labels[i] != label:
                 distance = np.linalg.norm( best_position - position )
-                if distance < nearest_distance:
+                if distance < nearest_distance and counter[ labels[i] ] > 2:
                     nearest_label = labels[i]
 
-        max_label = max(labels)
-        for i, l in enumerate(labels):
-            if l == label:
-                labels[i] = nearest_label 
-            elif l == max_label:
-                labels[i] = label
+        should_merge[ label ] = nearest_label
 
-    #print(directed_edges)
-    #print(labels)
+
+    for from_label, to_label in should_merge.items():
+        # Change all from_label to to_label
+        for i, l in enumerate(labels):
+            if l == from_label:
+                labels[i] = to_label
+
+    counter = Counter(labels)  
+    label, max_label = 0, max(labels)
+    while label < max_label:
+        if counter[label] == 0:
+            for i, l in enumerate(labels):
+                if l == max_label:
+                    labels[i] = label 
+        label += 1
+        max_label = max(labels)
+
     return np.array(labels)
     
 
@@ -215,15 +230,24 @@ def clustering(positions, fitnesses):
 
 def trim_by_MDL( positions, fitnesses, labels ):
 
+    assert len(labels) == len(fitnesses) == len(positions)
+    positions, fitnesses = np.array(positions), np.array(fitnesses)
     k = max(labels) + 1
 
     clusters_positions, clusters_fitnesses = [], []
     for i in range(k):
         #print(i)
         indices = np.where(labels==i)[0]
-        #print(indices)
-        clusters_positions.append( positions[indices] ) 
-        clusters_fitnesses.append( fitnesses[indices] ) 
+        try:
+            clusters_positions.append( positions[indices] ) 
+            clusters_fitnesses.append( fitnesses[indices] ) 
+        except TypeError as e:
+            print(e)
+            print(indices)
+            print('labels:\n',labels)
+            print('fitnesses:\n',fitnesses)
+            print('positions:\n', positions)
+            input()
 
     #draw( clusters_positions, clusters_fitnesses, obj, fig_name = 'test.png' )
 
@@ -233,19 +257,19 @@ def trim_by_MDL( positions, fitnesses, labels ):
     scores = calculate_MDL_scores( positions, fitnesses, labels )
     merge_index = np.unravel_index(scores.argmin(), scores.shape) 
     min_score = scores[merge_index] 
-    print(labels)
+    #print(labels)
     #print('scores:\n', scores) 
     #print('min_score:', scores[merge_index])
     #print('original_score:', original_score)
 
    
     while min_score < original_score:
-        print('merge:', merge_index)
+        #print('merge:', merge_index)
         max_indices = np.where(labels==max(labels))[0]
         merge_indices = np.where(labels==max(merge_index))[0]
         labels[max_indices] = max(merge_index)
         labels[merge_indices] = min(merge_index)
-        print(labels)
+        #print(labels)
 
         original_score = min_score
 
@@ -256,6 +280,7 @@ def trim_by_MDL( positions, fitnesses, labels ):
         #print('min_score:', scores[merge_index])
         #print('original_score:', original_score)
 
+    labels = force_small_sample_clustering( list(labels), positions, fitnesses )
     return labels
 
 
@@ -421,7 +446,7 @@ def run(function_id):
 
 
 if __name__ == '__main__':
-    function_id = 19 
+    function_id = 0 
     run(function_id)
 
     #for function_id in range(25):

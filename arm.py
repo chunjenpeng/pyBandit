@@ -155,7 +155,8 @@ class Arm:
         wilks_statistics = self.n_points * manhalanobis_distance( mean, self.mean, self.cov )
         dof = self.dimension
         p_value = chisqprob( wilks_statistics, dof )
-        print('%f'%p_value, mean, self.mean )
+        if p_value < 0.05:
+            print('\nReject_model: p_value:%f, mean:'%p_value, mean, self.mean )
 
         return p_value < 0.05
 
