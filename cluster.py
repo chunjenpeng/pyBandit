@@ -1,7 +1,8 @@
+import sys, os
 from collections import Counter
 from itertools import combinations
 from operator import itemgetter
-from scipy.stats import rankdata
+from scipy.stats import rankdata, multivariate_normal
 from sklearn.metrics import silhouette_score
 from sklearn.cluster import KMeans
 from optproblems.cec2005 import CEC2005
@@ -124,29 +125,27 @@ def force_small_sample_clustering( labels, positions, fitnesses ):
     return np.array(labels)
     
 
+def calculate_weights(fitnesses):
+
+    # Inverse ranks so that min fitness has max value of rank
+    ranks = rankdata(fitnesses, method='ordinal')
+
+    n = len(fitnesses)
+    weights = np.log(n + 0.5) - np.log(ranks)
+    weights = weights / sum(weights)
+
+    return weights
+
 
 def weighted_gaussian(positions, fitnesses):
 
-    # Inverse ranks so that min fitness has max value of rank
-    #fitnesses = -1*np.array(fitnesses)
-    #inverse_ranks = rankdata(fitnesses, method='ordinal')
-    #weights = 1.0/sum(inverse_ranks) * inverse_ranks
-    #print(weights)
-
-    n = len(fitnesses)
-    ranks = rankdata(fitnesses, method='ordinal')
-    weights = np.log(n + 0.5) - np.log(ranks)
-    weights = weights / sum(weights)
-    #print(weights)
-    #print(positions) 
+    weights = calculate_weights(fitnesses)
 
     mean = np.ma.average( positions, axis = 0, weights = weights )
-    #print(mean)
-    xm = positions - mean
-    #print(xm)
-    #print(weights[:,None] * xm )
+
+    xm = positions - np.ma.average( positions, axis = 0, weights = weights )
     covariance = (weights[:,None] * xm).T.dot(xm)
-    #print(covariance)
+
     return mean, covariance 
 
 
@@ -159,34 +158,44 @@ def MDL(clusters_positions, clusters_fitnesses):
     # I: total number of points
     I = sum(len(c) for c in clusters_positions)
 
-    score = J * (D**2 + 3*D + 2) * np.log(I)/2
+    score = ( (J * (D**2 + 3*D + 2)/2) - 1) * np.log(I)/2
 
-    #print('J:', J) 
-    #print('D:', D) 
-    #print('I:', I) 
-    #print('score:', score) 
 
     for positions, fitnesses in zip(clusters_positions, clusters_fitnesses):
-        # n: number of points in each cluster
-        n = len(positions) 
-        mean, covariance = weighted_gaussian(positions, fitnesses)
-        det = np.linalg.det(covariance)
-        if n > 0 and det > 0:
-            score -= n * np.log( n*n/det )
-        '''
-        else:
-            print('n:', n)
-            print('det:', det)
-            print('cov:\n', covariance)
-        '''
-        #assert n != 0
-        #assert det != 0
-        #score -= n * np.log( n*n/det )
 
-        #print('n:', n) 
-        #print('cov:\n', covariance) 
-        #print('|cov|:', np.linalg.det(covariance)) #print(n * np.log( n*n/np.linalg.det(covariance) ) )
-        #print('score:', score) 
+        # alpha: number of points in each cluster / total number of points
+        alpha = float(len(positions))/I
+
+        weights = calculate_weights(fitnesses)
+        
+        mean, cov = weighted_gaussian(positions, fitnesses)
+
+        residuals = positions - mean
+
+        def calc_loglikelihood(residuals):
+            det = np.linalg.det(cov)
+            return -0.5 * (np.log(det) + residuals.T.dot(np.linalg.inv(cov)).dot(residuals) + 2 * np.log(2 * np.pi))
+
+        loglikelihood = np.apply_along_axis(calc_loglikelihood, 1, residuals)
+
+        # Original version (simplified)
+        scale, det = 0.0, 0
+        while det == 0:
+            # det is scale invariant, and must not be 0 
+            scale += 1.0
+            det = np.linalg.det( scale * cov )
+
+        n = len(positions)
+        score -= n*np.log(n*n/det)
+
+        # Original version
+        #score -= np.log(alpha)*len(loglikelihood) + sum(loglikelihood)
+
+        # V1
+        #score -= np.log(alpha)*len(loglikelihood) + np.dot(weights.T, loglikelihood)
+
+        # V2
+        #score -= np.log(alpha)*len(loglikelihood) + sum(np.log(weights)) + sum(loglikelihood)
     
     return score 
 
@@ -232,6 +241,9 @@ def trim_by_MDL( positions, fitnesses, labels ):
 
     assert len(labels) == len(fitnesses) == len(positions)
     positions, fitnesses = np.array(positions), np.array(fitnesses)
+
+    labels = force_small_sample_clustering( list(labels), positions, fitnesses )
+
     k = max(labels) + 1
 
     clusters_positions, clusters_fitnesses = [], []
@@ -247,7 +259,7 @@ def trim_by_MDL( positions, fitnesses, labels ):
             print('labels:\n',labels)
             print('fitnesses:\n',fitnesses)
             print('positions:\n', positions)
-            input()
+            raise e
 
     #draw( clusters_positions, clusters_fitnesses, obj, fig_name = 'test.png' )
 
@@ -259,12 +271,11 @@ def trim_by_MDL( positions, fitnesses, labels ):
     min_score = scores[merge_index] 
     #print(labels)
     #print('scores:\n', scores) 
-    #print('min_score:', scores[merge_index])
-    #print('original_score:', original_score)
+    print('original_score:', original_score)
 
    
     while min_score < original_score:
-        #print('merge:', merge_index)
+        print('merge:', merge_index, 'min_score:', min_score)
         max_indices = np.where(labels==max(labels))[0]
         merge_indices = np.where(labels==max(merge_index))[0]
         labels[max_indices] = max(merge_index)
@@ -277,11 +288,31 @@ def trim_by_MDL( positions, fitnesses, labels ):
         merge_index = np.unravel_index(scores.argmin(), scores.shape) 
         min_score = scores[merge_index]
         #print('scores:\n', scores) 
-        #print('min_score:', scores[merge_index])
         #print('original_score:', original_score)
+        
+        ###########################################
+        '''
+        from boundary import Boundary
+        dimension = 2
+        obj = CEC2005(dimension)[function_id].objective_function
+        min_bounds = Boundary(dimension, function_id).min_bounds
+        max_bounds = Boundary(dimension, function_id).max_bounds
+        clusters_positions, clusters_fitnesses = [], []
+        for i in range(k):
+            indices = np.where(labels==i)[0]
+            clusters_positions.append( positions[indices] ) 
+            clusters_fitnesses.append( fitnesses[indices] ) 
+        k = max(labels)+1
+        fig_name = '2017_07_03_MDL_selection/F%d_%d.png'%(function_id+1, k)
+        print('K = %d, drawing'%k, fig_name)
+        draw( clusters_positions, clusters_fitnesses, obj, 
+              fig_name = fig_name,
+              xlim = [ min_bounds[0], max_bounds[0] ],
+              ylim = [ min_bounds[1], max_bounds[1] ] )
+        '''
+        ###########################################
 
-    labels = force_small_sample_clustering( list(labels), positions, fitnesses )
-    return labels
+    return np.array(labels)
 
 
 
@@ -380,10 +411,11 @@ def manhalanobis_distance(x, mean, cov):
     return xm.dot(inverse_cov).dot(xm.T)
 
 
-def run(function_id):
+def run(function_id, fig_dir):
     from boundary import Boundary
     dimension = 2
-    n_points = 500
+    n_points = 400 
+    function_id = function_id-1
     obj = CEC2005(dimension)[function_id].objective_function
     min_bounds = Boundary(dimension, function_id).min_bounds
     max_bounds = Boundary(dimension, function_id).max_bounds
@@ -400,58 +432,80 @@ def run(function_id):
 
     clusters_positions, clusters_fitnesses = [], []
     for i in range(k):
-        #print(i)
         indices = np.where(labels==i)[0]
-        #print(indices)
         clusters_positions.append( positions[indices] ) 
         clusters_fitnesses.append( fitnesses[indices] ) 
 
+
+    fig_name = 'F%d_init.png' % (function_id+1)
+    print('K = %d, drawing'%k, fig_name)
+
     draw( clusters_positions, clusters_fitnesses, obj, 
-          #fig_name = '2017_06_19_MDL_selection/F%d_init.png'%(function_id+1),
-          fig_name = 'F%d_init.png'%(function_id+1),
+          fig_name = fig_name,
+          fig_dir = fig_dir,
           xlim = [ min_bounds[0], max_bounds[0] ],
           ylim = [ min_bounds[1], max_bounds[1] ] )
 
 
 
-    labels = clustering( positions, fitnesses )
+    labels = trim_by_MDL( positions, fitnesses, labels ) 
+    #labels = clustering( positions, fitnesses )
     k = max(labels) + 1
 
     clusters_positions, clusters_fitnesses = [], []
     for i in range(k):
-        print(i)
+        #print(i)
         indices = np.where(labels==i)[0]
         clusters_positions.append( positions[indices] ) 
         clusters_fitnesses.append( fitnesses[indices] ) 
 
-        mean, cov = weighted_gaussian( positions[indices], fitnesses[indices] ) 
-        distances = [ manhalanobis_distance(x, mean, cov) for x in positions[indices] ]
-        idx = np.argsort(distances)
-        for i in idx:
-            print( positions[indices][i], fitnesses[indices][i], distances[i] )
+        #mean, cov = weighted_gaussian( positions[indices], fitnesses[indices] ) 
+        #distances = [ manhalanobis_distance(x, mean, cov) for x in positions[indices] ]
+        #idx = np.argsort(distances)
+        #for i in idx:
+        #    print( positions[indices][i], fitnesses[indices][i], distances[i] )
 
-        h = -fitnesses[indices][idx] - min(-fitnesses[indices])
-        h = h/sum(h)
-        print(h)
+        #h = -fitnesses[indices][idx] - min(-fitnesses[indices])
+        #h = h/sum(h)
+        #print(h)
         #n, bins, patches = plt.hist(h, len(h)
 
-        print()
+        #print()
 
+
+    fig_name = 'F%d_MDL_GMM.png' % (function_id+1)
+    print('K = %d, drawing'%k, fig_name)
 
     draw( clusters_positions, clusters_fitnesses, obj, 
-          #fig_name = '2017_06_19_MDL_selection/F%d_MDL_GMM.png'%(function_id+1),
-          fig_name = 'F%d_MDL_GMM.png'%(function_id+1),
+          fig_name = fig_name,
+          fig_dir = fig_dir,
           xlim = [ min_bounds[0], max_bounds[0] ],
           ylim = [ min_bounds[1], max_bounds[1] ] )
 
 
 if __name__ == '__main__':
-    function_id = 0 
-    run(function_id)
 
-    #for function_id in range(25):
-    #    run(function_id)
 
+    if len(sys.argv) < 2:
+        print()
+        print('         python3 cluster.py <function_id (1~25)> <dir(default: ./)>')
+        print('Example: python3 cluster.py 1')
+        print('Example: python3 cluster.py 25 test/')
+        print()
+    else:
+
+        function_id = 1 # F1 ~ F25
+        fig_dir = './'
+
+        if len(sys.argv) == 2:
+            function_id = int(sys.argv[1])
+        elif len(sys.argv) == 3:
+            function_id = int(sys.argv[1])
+            fig_dir = sys.argv[2]
+            if not os.path.exists(fig_dir):
+                os.makedirs(fig_dir)
+
+        run(function_id, fig_dir = fig_dir)
 
 
 
