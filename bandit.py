@@ -1,4 +1,4 @@
-import sys
+import sys, random
 from operator import attrgetter
 from collections import OrderedDict
 from copy import deepcopy
@@ -35,14 +35,15 @@ class Bandit:
 
         # Parameters for Bandit arms
         self.arms = []
-        self.max_arms_num = min(self.n_points, kwargs.get('max_arms_num', 10) )
+        #self.max_arms_num = min(self.n_points, kwargs.get('max_arms_num', 10) )
         self.max_evaluations = kwargs.get('max_evaluations', 1e4*dimension )
         self.f_left = self.max_evaluations
         self.iteration = 0
 
         # Initialize Bandit
         self.n_samples = 200 * dimension
-        init_n_points = max(100*dimension, self.n_points*self.max_arms_num) 
+        #init_n_points = max(100*dimension, self.n_points*self.max_arms_num) 
+        init_n_points = 100*dimension
         population_step = int(init_n_points/10)
 
         self.init_bandit(init_n_points, population_step)
@@ -64,101 +65,128 @@ class Bandit:
 
         best_arm = self.find_best_arm() 
 
-        if best_arm is not None:
-            best_position, best_fitness = self.arms[best_arm].pull()
-            self.remain_f_allocation[best_arm] -= 1.0
+        if best_arm is None:
+            return self.best_position, self.best_fitness
 
-            # Update statistics
-            if best_fitness < self.best_fitness:
-                self.best_fitness = best_fitness
-                self.best_position = best_position
-            
-            # Check if need to update border
-            if self.arms[best_arm].reject_model():
+        best_position, best_fitness = self.arms[best_arm].pull()
+        self.remain_f_allocation[best_arm] -= 1.0
 
-                include = self.arms[best_arm].get_positions()
-                trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
-                exclude = []
-                for i, arm in enumerate(self.arms):
-                    if i != best_arm:
-                        samples = arm.matrix.inverse_transform( trans_samples )
-                        exclude.extend(samples)
-                exclude = np.array(exclude)
+        # Update statistics
+        if best_fitness < self.best_fitness:
+            self.best_fitness = best_fitness
+            self.best_position = best_position
+        
+        # Check if need to update border
+        if self.arms[best_arm].mean_shifted():
+            if self.plot > 0: 
+                draw_arms( function_id-1, self.arms,
+                           fig_name='it%d.png'% (self.iteration-1), 
+                           **self.fig_config )
 
-                matrix = Matrix(include)
-                matrix.optimize( best_position,
-                                 include,
-                                 exclude, 
-                                 self.min_bounds,
-                                 self.max_bounds,
-                                 max_evaluation_num = 1e4 )
-
-                self.arms[best_arm].transform(matrix)
-                self.arms[best_arm].matrix = matrix
-                self.arms[best_arm].update_model()
-
-                if self.verbose: print('Update matrix of arm %d' % best_arm)
+            if self.should_delete_arm(best_arm):
+                del self.arms[best_arm]
+                self.remain_f_allocation = np.zeros(len(self.arms))
+                self.remain_f_ratio = self.calculate_remain_f_ratio()
+                #self.remain_f_allocation = np.delete(self.remain_f_allocation, best_arm)
+                if self.verbose: print('Delete arm %d\n' % best_arm)
                 if self.plot > 0: 
                     draw_arms( function_id-1, self.arms,
-                               fig_name='it%d_1_update.png'% (self.iteration-1), 
+                               fig_name='it%d_0_delete.png'% (self.iteration-1), 
                                **self.fig_config )
+                return self.best_position, self.best_fitness
 
-            #############################################################################
-                # Check if need to recluster 
-                original_positions = self.arms[best_arm].get_positions()
-                original_fitnesses = self.arms[best_arm].get_fitnesses()
-                labels = hierarchical_clustering( original_positions, original_fitnesses )
-                labels = trim_by_MDL( original_positions, original_fitnesses, labels )
+
+            include = self.arms[best_arm].get_positions()
+            include_fitnesses = self.arms[best_arm].get_fitnesses()
+            trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
+            exclude = []
+            for i, arm in enumerate(self.arms):
+                if i != best_arm:
+                    samples = arm.matrix.inverse_transform( trans_samples )
+                    exclude.extend(samples)
+            exclude = np.array(exclude)
+
+            matrix = Matrix(include, include_fitnesses, self.min_bounds, self.max_bounds)
+            matrix.optimize( best_position,
+                             include,
+                             exclude )
+
+            self.arms[best_arm].transform(matrix)
+            self.arms[best_arm].matrix = matrix
+            self.arms[best_arm].update_model()
+
+            if self.verbose: print('Update matrix of arm %d\n' % best_arm)
+            if self.plot > 0: 
+                draw_arms( function_id-1, self.arms,
+                           fig_name='it%d_1_update.png'% (self.iteration-1), 
+                           **self.fig_config )
+
+        #############################################################################
+        positions = self.arms[best_arm].get_positions()
+        fitnesses = self.arms[best_arm].get_fitnesses()
+
+        # Check if need to recluster 
+        avg_search_space = np.mean([arm.search_space for arm in self.arms])
+        splitting_threshold = self.arms[best_arm].search_space / avg_search_space
+        if random.random() < splitting_threshold:
+            if self.verbose: 
+                print('Pass splitting_threshold: %f = %f/%f' 
+                      % (splitting_threshold, 
+                         self.arms[best_arm].search_space, 
+                         avg_search_space) )
+
+            labels = hierarchical_clustering( positions, fitnesses )
+            labels = trim_by_MDL( positions, fitnesses, labels )
+        else:
+            labels = [0]*len(fitnesses)
+
+        max_label = max(labels)
+        if max_label > 0:
+            if self.verbose: 
+                print('\nReclustering... spliting arm %d into %d' 
+                      % (best_arm, max_label+1) )
+
+        # Check if merging is possible
+        if max_label > 0 or len(self.arms) > 1:
+            label = 0
+            old_labels = [label] * len(fitnesses)
+            for i, arm in enumerate(self.arms):
+                if i != best_arm:
+                    positions = np.concatenate(( positions, arm.get_positions() ))
+                    fitnesses = np.concatenate(( fitnesses, arm.get_fitnesses() ))
+                    max_label += 1
+                    label += 1
+                    labels = np.concatenate((labels,[max_label]*len(arm.get_fitnesses())))
+                    old_labels.extend([label]*len(arm.get_fitnesses()))
     
-                max_label = max(labels)
-                if max_label > 0:
-                    if self.verbose: 
-                        print('\nReclustering... spliting arm %d into %d' % (best_arm, max_label+1) )
+                
+            labels = trim_by_MDL( positions, fitnesses, labels )
+            old_labels = np.array(old_labels)
+            if not (labels == old_labels).all():
+                if self.verbose: 
+                    print('Reclustering... estimate %d clusters with MDL' 
+                           % (max(labels)+1) )
+                    print('old_labels:', old_labels)
+                    print('new_labels:', labels)
+                
+                positions, fitnesses = np.array(positions), np.array(fitnesses)
+                cluster_positions, cluster_fitnesses = [], []
+                for i in range( max(labels)+1 ):
+                    indices = np.where(labels == i)[0]
+                    cluster_positions.append(positions[indices])
+                    cluster_fitnesses.append(fitnesses[indices])
+                
+                # Recluster
+                self.recluster(cluster_positions, cluster_fitnesses, labels)
     
-                    positions, fitnesses = original_positions, original_fitnesses 
-                    for i, arm in enumerate(self.arms):
-                        if i != best_arm:
-                            positions = np.concatenate(( positions, arm.get_positions() ))
-                            fitnesses = np.concatenate(( fitnesses, arm.get_fitnesses() ))
-                            max_label += 1
-                            labels = np.concatenate(( labels, [max_label] * len(arm.get_fitnesses()) ))
+                self.remain_f_allocation = np.zeros( len(self.arms) )
+                self.remain_f_ratio = self.calculate_remain_f_ratio()
     
-                    
-                    labels = trim_by_MDL( positions, fitnesses, labels )
-                    
-                    positions, fitnesses = np.array(positions), np.array(fitnesses)
-                    cluster_positions, cluster_fitnesses = [], []
-                    for i in range( max(labels)+1 ):
-                        indices = np.where(labels == i)[0]
-                        try:
-                            cluster_positions.append(positions[indices])
-                            cluster_fitnesses.append(fitnesses[indices])
-                        except TypeError as e:
-                            print(e)
-                            print('labels:%d\n' % len(labels), labels)
-                            print('indices:%d\n' % len(indices),indices)
-                            print('fitnesses:%d\n' % len(fitnesses), fitnesses[indices])
-                            print('positions:%d\n' % len(positions), positions[indices])
-                            raise e 
-    
-                    
-                    #if self.plot > 0: 
-                    #    draw_arms( function_id-1, self.arms, 
-                    #               fig_name='it%d_recluster_0.png'% (self.iteration-1), 
-                    #               **self.fig_config )
-                    
-                    # Recluster
-                    self.recluster(cluster_positions, cluster_fitnesses, labels)
-    
-                    self.remain_f_allocation = np.zeros( len(self.arms) )
-                    self.remain_f_ratio = self.calculate_remain_f_ratio()
-    
-    
-                    if self.plot > 0: 
-                        draw_arms( function_id-1, self.arms,
-                                   fig_name='it%d_2_recluster.png'% (self.iteration-1), 
-                                   **self.fig_config )
-            #############################################################################
+                if self.plot > 0: 
+                    draw_arms( function_id-1, self.arms,
+                               fig_name='it%d_2_recluster.png'% (self.iteration-1), 
+                               **self.fig_config )
+        #############################################################################
 
 
         return self.best_position, self.best_fitness
@@ -227,6 +255,19 @@ class Bandit:
 
 
 
+    def should_delete_arm(self, index):
+        if len(self.arms) > 1:
+            all_ranks = self.get_ranks()
+            best_rank_of_worst_cluster = ((len(self.arms) - 1) * self.n_points) 
+            if min(all_ranks[index]) >= best_rank_of_worst_cluster: 
+                print('Delete worst arm %d with ranks:' % index)
+                for ranks in all_ranks:
+                    print(ranks)
+                return True
+        return False
+
+
+
 
 
     ##############################
@@ -248,7 +289,7 @@ class Bandit:
         positions, fitnesses = self.init_population( init_n_points )
 
         # Selection
-        selected_positions, selected_fitnesses = self.selection( positions, fitnesses )
+        selected_positions, selected_fitnesses = self.selection( positions, fitnesses, selection_pressure=2 )
 
         # Update best_fitness and best_position
         best_index = np.argmin(selected_fitnesses)
@@ -256,7 +297,11 @@ class Bandit:
         self.best_position = selected_positions[ best_index ]
 
         labels = hierarchical_clustering(selected_positions, selected_fitnesses) 
+        if self.verbose: print( 'Estimate %d clusters with hierarchical clustering' % (max(labels)+1) )
+
         labels = trim_by_MDL(selected_positions, selected_fitnesses, labels) 
+        if self.verbose: print( 'Estimate %d clusters with MDL' % (max(labels)+1) )
+
         cluster_positions, cluster_fitnesses = [], []
         for i in range(max(labels) + 1):
             indices = np.where(labels==i)[0]
@@ -265,56 +310,13 @@ class Bandit:
 
         return cluster_positions, cluster_fitnesses
 
-        '''
-        # Esitmate number of clusters with silhouette_score
-        k = self.estimate_k_clusters(selected_positions, self.max_arms_num)
-        if self.verbose:
-            print('Estimating number of clusters...')
-            print('k:', k, 'population:', len(selected_positions))
-
-
-        # Increase population until k == last_k
-        last_k = np.inf
-        while k != last_k:
-            last_k = k
-
-            # Add "population_step" points into population
-            new_positions, new_fitnesses = self.init_population( population_step )
-            positions = np.concatenate((positions, new_positions), axis=0)
-            fitnesses = np.concatenate((fitnesses, new_fitnesses), axis=0)
-            
-            selected_positions, selected_fitnesses = self.selection( positions, fitnesses )
-            k = self.estimate_k_clusters(selected_positions, self.max_arms_num)
-            if self.verbose: print('k:', k, 'population:', len(selected_positions))
-
-
-        # Update best_fitness and best_position
-        best_index = np.argmin(selected_fitnesses)
-        self.best_fitness = selected_fitnesses[ best_index ]
-        self.best_position = selected_positions[ best_index ]
-
-
-        # KMeans clustering
-        if k > 1:
-            cluster_positions, cluster_fitnesses = \
-                self.k_means(k, selected_positions, selected_fitnesses)  
-        else:
-            cluster_positions = [selected_positions]
-            cluster_fitnesses = [selected_fitnesses]
-            
-        assert len(cluster_positions) == k
-        assert len(cluster_positions) == len(cluster_fitnesses)
-
-        return cluster_positions, cluster_fitnesses
-        '''
-
 
 
     def init_arms(self, cluster_positions, cluster_fitnesses):
 
-        k = len(cluster_positions)
         # Default matrix that translate and shrink search space to [0,1]^D 
-        matrices = [ Matrix(positions) for positions in cluster_positions ]
+        matrices = [ Matrix(positions, fitnesses, self.min_bounds, self.max_bounds)
+                     for positions, fitnesses in zip(cluster_positions, cluster_fitnesses) ]
 
         if self.plot > 0: 
             draw_optimization( function_id-1, cluster_positions, matrices, 
@@ -324,6 +326,7 @@ class Bandit:
         # Random sample n_samples to represent search space for non-overlapped optimization
         trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
 
+        k = len(cluster_positions)
         for i in range(k):
             exclude = []
             for j in range(k):
@@ -436,13 +439,18 @@ class Bandit:
         old_arms_ranks = self.get_ranks()
         new_arms_ranks = self.get_ranks(cluster_fitnesses)
         if self.verbose:
-            print('old ranks:\n', old_arms_ranks)
-            print('new ranks:\n', new_arms_ranks)
+            print('\nold ranks:')
+            for ranks in old_arms_ranks:
+                print(ranks)
+            print('new ranks:')
+            for ranks in new_arms_ranks:
+                print(ranks)
 
 
         # Generate new arms
         new_arms = []
-        matrices = [ Matrix(positions) for positions in cluster_positions ]
+        matrices = [ Matrix(positions, fitnesses, self.min_bounds, self.max_bounds)
+                     for positions, fitnesses in zip(cluster_positions, cluster_fitnesses) ]
         trans_samples = np.random.uniform( 0, 1, size=(self.n_samples, self.dimension) )
 
         for new_index, new_ranks in enumerate(new_arms_ranks):
@@ -473,13 +481,10 @@ class Bandit:
                 if duplicate_ratio > 0.5:
 
                     # Optimize matrix
-                    if self.verbose: print('optimizing matrix for new arm %d' % new_index )
+                    if self.verbose: print('\nOptimizing matrix for new arm %d' % new_index )
                     matrices[new_index].optimize( best, 
                                                   cluster_positions[new_index], 
-                                                  exclude,
-                                                  self.min_bounds, 
-                                                  self.max_bounds,
-                                                  max_evaluation_num = 1e4 ) 
+                                                  exclude )
 
                     # Copy unchanged arm to new arms
                     arm = self.arms[old_index]
@@ -497,12 +502,12 @@ class Bandit:
 
 
                     if self.verbose:
-                        print('\nCopy arm %d -> %d: %.1f%% duplicate' % 
+                        print('Copy arm %d -> %d: %.1f%% duplicate' % 
                                (old_index, new_index, 100*duplicate_ratio) )
-                        print('intersection:', list(intersection))
-                        print('insert_ranks:', list(insert_ranks))
-                        print('remove_ranks:', list(remove))
-                        print('resize_ranks:', resize_ranks)
+                        #print('intersection:', list(intersection))
+                        #print('insert_ranks:', list(insert_ranks))
+                        #print('remove_ranks:', list(remove))
+                        #print('resize_ranks:', resize_ranks)
 
                         #print('\noriginal:')
                         #print(self.arms[old_index].get_positions())
@@ -526,18 +531,18 @@ class Bandit:
                                 replace_position = cluster_positions[new_index][index]
                                 subspace_position = arm.matrix.transform([replace_position])[0]
                                 replace_fitness  = cluster_fitnesses[new_index][index] 
-                                if self.verbose:
-                                    print('old_rank[%d] = %d is replaced by rank %d, f = %f, pos=' 
-                                          % (i, rank, insert_rank, replace_fitness), replace_position)
+                                #if self.verbose:
+                                #    print('old_rank[%d] = %d is replaced by rank %d, f = %f, pos=' 
+                                #          % (i, rank, insert_rank, replace_fitness), replace_position)
 
                             # Replace particle with a random sample 
                             else:
                                 subspace_position = np.random.uniform( 0, 1, size=(self.dimension))
                                 replace_position = arm.matrix.inverse_transform([subspace_position])[0]
                                 replace_fitness  = self.obj(replace_position)
-                                if self.verbose:
-                                    print('old_rank[%d] = %d is replaced by sample point f = %f, pos=' 
-                                          % (i, rank, replace_fitness), replace_position)
+                                #if self.verbose:
+                                #    print('old_rank[%d] = %d is replaced by sample point f = %f, pos=' 
+                                #          % (i, rank, replace_fitness), replace_position)
 
                             replace_indices.append(i)
                             replace_positions.append(subspace_position)
@@ -649,6 +654,15 @@ class TestBandit:
         if error < self.termination_error:
             self.best_fitness = fitness
             self.best_position = x
+            print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' % 
+                  (self.iteration, self.FE, error, self.best_fitness))
+            print('position:%s\n' % self.best_position)
+
+            if self.plot > 0:
+                self.fig_config['fig_title'] = ('F%d, FE=%d, error=%.2e' % 
+                                                (self.function_id+1, self.FE, error) )
+                draw_arms( self.function_id, self.algo.arms,
+                           fig_name='it%d.png'%self.iteration, **self.fig_config )
             raise Exception('Found Optima!')
 
         return fitness
@@ -705,11 +719,11 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 40,
+    testBandit = TestBandit( n_points = 50,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
                              plot = 1000, 
                              fig_dir = '%s/F%d' % (fig_dir, function_id)
