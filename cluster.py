@@ -30,7 +30,6 @@ def find_directed_edges( distance_matrix, fitnesses, num_neighbors ):
             closest = np.argmin(distance_matrix[i])
             closest_indices.append(closest)
             distance_matrix[i,closest] = np.inf
-        #print(i, closest_indices)
 
         min_index = np.argmin( [fitnesses[c] for c in closest_indices] )
         directed_edges[i] = closest_indices[min_index]
@@ -125,28 +124,29 @@ def force_small_sample_clustering( labels, positions, fitnesses ):
     return np.array(labels)
     
 
+
 def calculate_weights(fitnesses):
 
     # Inverse ranks so that min fitness has max value of rank
     ranks = rankdata(fitnesses, method='ordinal')
-
-    n = len(fitnesses)
-    weights = np.log(n + 0.5) - np.log(ranks)
+    weights = np.log(len(fitnesses) + 0.5) - np.log(ranks)
     weights = weights / sum(weights)
 
     return weights
+
 
 
 def weighted_gaussian(positions, fitnesses):
 
     weights = calculate_weights(fitnesses)
 
-    mean = np.ma.average( positions, axis = 0, weights = weights )
+    mean = np.average( positions, axis = 0, weights = weights )
 
-    xm = positions - np.ma.average( positions, axis = 0, weights = weights )
+    xm = positions - mean
     covariance = (weights[:,None] * xm).T.dot(xm)
 
     return mean, covariance 
+
 
 
 def MDL(clusters_positions, clusters_fitnesses):
@@ -158,32 +158,16 @@ def MDL(clusters_positions, clusters_fitnesses):
     # I: total number of points
     I = sum(len(c) for c in clusters_positions)
 
-    #score = ( (J * (D**2 + 3*D + 2)/2) - 1) * np.log(I)/2
-    score = J * (D**2 + 3*D + 2) * np.log(I)/2
+    # Model description score
+    score = ( (J * (D**2 + 3*D + 2)/2) - 1) * np.log(I)/2
 
 
+    # Data Liklihood score
     for positions, fitnesses in zip(clusters_positions, clusters_fitnesses):
 
-        # Original version (simplified)
-        mean, cov = weighted_gaussian(positions, fitnesses)
-        n = len(positions)
-
-        det = np.linalg.det( cov )
-        if det == 0:
-            det += 1e-10
-        score -= n*np.log(n*n/det)
-
-        #scale, det = 0.0, 0
-        #while det == 0:
-        #    # det is scale invariant, and must not be 0 
-        #    scale += 1.0
-        #    det = np.linalg.det( scale * cov )
-        #score -= n*np.log(n*n/det)
-
-
-        '''
         # alpha: number of points in each cluster / total number of points
-        alpha = float(len(positions))/I
+        n = len(positions)
+        alpha = float(n)/I
 
         weights = calculate_weights(fitnesses)
         
@@ -192,25 +176,38 @@ def MDL(clusters_positions, clusters_fitnesses):
         residuals = positions - mean
 
         def calc_loglikelihood(residuals):
-            det = np.linalg.det(cov)
-            return -0.5 * (np.log(det) + residuals.T.dot(np.linalg.inv(cov)).dot(residuals) + 2 * np.log(2 * np.pi))
+            # More stable version for calculating log(det)
+            sign, logdet = np.linalg.slogdet(cov)
+            #det = sign * np.exp(logdet)
+
+            # Quick hack to avoid singular matrix
+            inv_cov = np.linalg.inv( cov + np.eye(cov.shape[1])*1e-8 )
+
+            return -0.5 * (logdet + residuals.T.dot(inv_cov).dot(residuals) + 2 * np.log(2 * np.pi))
 
         loglikelihood = np.apply_along_axis(calc_loglikelihood, 1, residuals)
 
         # Original version
         #score -= np.log(alpha)*len(loglikelihood) + sum(loglikelihood)
-
         # V1
-        #score -= np.log(alpha)*len(loglikelihood) + np.dot(weights.T, loglikelihood)
-
+        #score -= np.log(alpha)*len(loglikelihood) + np.dot(np.log(weights).T, loglikelihood)
         # V2
         #score -= np.log(alpha)*len(loglikelihood) + sum(np.log(weights)) + sum(loglikelihood)
-        ''' 
+        # V3 
+        #for w, l, p in zip(weights, loglikelihood, positions):
+        #    score -= (n * w * (np.log(alpha) + l))
+        # V4:
+        #score -= n * ( np.log(alpha) * sum(weights) + np.dot( weights.T, loglikelihood ) )
+        # V5: (sum(weights) == 1)
+        score -= n * ( np.log(alpha) + np.dot( weights.T, loglikelihood ) )
+
     return score 
 
 
 
 def calculate_MDL_scores( positions, fitnesses, labels ): 
+
+    positions, fitnesses = np.array(positions), np.array(fitnesses)
     k = max(labels) + 1
     scores = np.empty((k+1, k+1)) 
     scores[:] = np.inf
@@ -229,8 +226,8 @@ def calculate_MDL_scores( positions, fitnesses, labels ):
                 clusters_positions.append( positions[indices] ) 
                 clusters_fitnesses.append( fitnesses[indices] ) 
 
-        clusters_positions.append( merged_positions )
-        clusters_fitnesses.append( merged_fitnesses )
+        clusters_positions.append( np.array(merged_positions) )
+        clusters_fitnesses.append( np.array(merged_fitnesses) )
 
         scores[combination] = MDL(clusters_positions, clusters_fitnesses)
 
@@ -256,19 +253,11 @@ def trim_by_MDL( positions, fitnesses, labels ):
     k = max(labels) + 1
 
     clusters_positions, clusters_fitnesses = [], []
-    for i in range(k):
+    for i in range(int(k)):
         #print(i)
         indices = np.where(labels==i)[0]
-        try:
-            clusters_positions.append( positions[indices] ) 
-            clusters_fitnesses.append( fitnesses[indices] ) 
-        except TypeError as e:
-            print(e)
-            print(indices)
-            print('labels:\n',labels)
-            print('fitnesses:\n',fitnesses)
-            print('positions:\n', positions)
-            raise e
+        clusters_positions.append( positions[indices] ) 
+        clusters_fitnesses.append( fitnesses[indices] ) 
 
     #draw( clusters_positions, clusters_fitnesses, obj, fig_name = 'test.png' )
 
@@ -280,11 +269,11 @@ def trim_by_MDL( positions, fitnesses, labels ):
     min_score = scores[merge_index] 
     #print(labels)
     #print('scores:\n', scores) 
-    print('original_score:', original_score)
+    #print('original_score:', original_score)
 
    
     while min_score < original_score:
-        print('merge:', merge_index, 'min_score:', min_score)
+        #print('merge:', merge_index, 'min_score:', min_score)
         max_indices = np.where(labels==max(labels))[0]
         merge_indices = np.where(labels==max(merge_index))[0]
         labels[max_indices] = max(merge_index)
@@ -416,18 +405,34 @@ def draw( clusters_positions, clusters_fitnesses, obj, fig_name, **kwargs ):
 def manhalanobis_distance(x, mean, cov):
     assert len(x) == len(mean) == len(cov) == len(cov[0])
     xm = x - mean
-    inverse_cov = np.linalg.inv(cov)
-    return xm.dot(inverse_cov).dot(xm.T)
+    inv_cov = np.linalg.inv( cov + np.eye(cov.shape[1])*1e-8 )
+    return xm.dot(inv_cov).dot(xm.T)
 
 
 def run(function_id, fig_dir):
     from boundary import Boundary
     dimension = 2
-    n_points = 400 
+    n_points = 200 
     function_id = function_id-1
     obj = CEC2005(dimension)[function_id].objective_function
     min_bounds = Boundary(dimension, function_id).min_bounds
     max_bounds = Boundary(dimension, function_id).max_bounds
+    '''
+    positions = np.array([
+                          [0.75, -1.4],
+                          [0.90, -1.4],
+                          [1.05, -1.4],
+                          [1.75, -1.4],
+                          [1.90, -1.4],
+                          [2.05, -1.4],
+                          [0.75, -1.6],
+                          [0.90, -1.6],
+                          [1.05, -1.6],
+                          [1.75, -1.6],
+                          [1.90, -1.6],
+                          [2.05, -1.6],
+                        ])
+    '''
     positions = np.random.uniform( min_bounds, max_bounds, size=(n_points, dimension) )
     fitnesses = np.array([ obj(p) for p in positions ])
 
