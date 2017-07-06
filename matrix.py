@@ -1,22 +1,41 @@
 from copy import deepcopy
 import numpy as np
 
+from cluster import weighted_gaussian
 from OnePlusOne_ES import OnePlusOne_ES
 
 class Matrix:
-    def __init__(self, positions, matrix=None):
+
+    def __init__(self, positions, fitnesses, min_bounds, max_bounds, matrix=None):
+
         self.delta = 1e-08
+        self.min_bounds = min_bounds
+        self.max_bounds = max_bounds
+
         if matrix is None:
-            self.matrix = self.init_matrix( np.array(positions) )
+            self.matrix = self.init_matrix( positions, fitnesses )
         else:
             self.matrix = matrix
 
 
     
-    def init_matrix(self, positions):
+    def init_matrix(self, positions, fitnesses):
+
         dim = len(positions[0])
+
+        best = positions[ np.argmin(fitnesses) ]
+        mean, cov = weighted_gaussian(positions, fitnesses)
+
         amax = np.amax(positions, axis = 0) + self.delta
         amin = np.amin(positions, axis = 0) - self.delta
+        center = 0.5*(amax + amin)
+        transfer = (mean - center) + (best - mean)
+
+        # Elementwise minimum and maximum
+        #amax = np.minimum( amax + np.clip(transfer, 0, None), self.max_bounds + self.delta )
+        #amin = np.maximum( amin + np.clip(transfer, None, 0), self.min_bounds - self.delta )
+        amax = np.minimum( amax + np.clip(transfer, 0, None), self.max_bounds )
+        amin = np.maximum( amin + np.clip(transfer, None, 0), self.min_bounds )
 
         scale = amax - amin
         scale_matrix = np.eye(dim + 1)
@@ -46,8 +65,8 @@ class Matrix:
             w[w == 0] = self.delta
             trans_positions = trans_positions[:, :-1] / w[:, None]
 
-        #assert (trans_positions <= 1).all() 
-        #assert (trans_positions >= 0).all() 
+        # Check all points falls in [0,1]^D subspace
+        trans_positions = np.clip( trans_positions, 0, 1 )
         return trans_positions
 
 
@@ -70,14 +89,12 @@ class Matrix:
 
 
 
-    def optimize(self, best, include, exclude, min_bounds, max_bounds, max_evaluation_num = 10000):
+    def optimize(self, best, include, exclude, max_evaluation_num = 1, restart = 1):
 
         dimension = self.matrix.shape[0] - 1
         n_samples = 100 * dimension 
 
         # Repeatedly used parameters in evaluate
-        self.min_bounds = min_bounds
-        self.max_bounds = max_bounds
         self.original_best_position = deepcopy(best)
         self.original_positions_in  = deepcopy(include)
         self.original_positions_out = deepcopy(exclude)
@@ -88,15 +105,13 @@ class Matrix:
         #print( 'Init score:', self.evaluate(best_solution, debug=True) )
 
         # Use (1+1)-ES to optimize matrix
-        repeat = 10
-        for _ in range(repeat):
+        for _ in range(restart):
             es = OnePlusOne_ES( self.evaluate, len(best_solution), 
                                 parent = self.matrix.ravel(),
                                 #parent = best_solution, 
-                                step = 0.1,
-                                max_iteration = max_evaluation_num / repeat )
-            while not es.stop():
-                x_best, score = es.run()
+                                step = 0.01,
+                                max_iteration = max_evaluation_num)
+            while not es.stop(): x_best, score = es.run()
             if score < best_score:
                 best_score = score
                 best_solution = x_best
@@ -159,11 +174,13 @@ class Matrix:
         score += dist_should_be_in 
         score += dist_should_be_out 
         # Split point in and out of cluster
+        if dist_should_be_out > 0:
+            score += len(trans_out)
         score += dist_out_min_bounds
         score += dist_out_max_bounds
         # Approximate a Normal distribution centering at trans_best
         score += dist_best_to_center
-        score += dist_std
+        #score += dist_std
 
         if not debug:
             return score 
@@ -199,9 +216,22 @@ if __name__ == '__main__':
 
     dimension = 2
     n_points = 5 
-    X = np.random.uniform(-100, 100, size = (n_points, dimension))
-    m = Matrix(X)
-    m.matrix = np.random.uniform(-100, 100, size = (dimension+1, dimension+1) )
+    function_id = 7
+
+    from optproblems.cec2005 import CEC2005
+    from boundary import Boundary
+    obj = CEC2005(dimension)[function_id-1].objective_function 
+    positions = np.random.uniform(-100, 100, size = (n_points, dimension))
+    fitnesses = np.array([obj(x) for x in positions])
+    boundary = Boundary(dimension, function_id-1)
+
+    selected = fitnesses.argsort()[:int(len(positions)/2)]
+    positions, fitnesses = positions[selected], fitnesses[selected]
+
+    m = Matrix(positions, fitnesses, boundary.min_bounds, boundary.max_bounds)
+    #m.matrix = np.random.uniform(boundary.init_min_bounds, boundary.init_max_bounds, 
+    #                             size = (dimension+1, dimension+1) )
+    X = positions
 
     print('\nTransformation Matrix:')
     print(m.matrix)
