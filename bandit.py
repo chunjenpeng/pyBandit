@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys, random
 from operator import attrgetter
 from collections import OrderedDict
@@ -122,70 +123,70 @@ class Bandit:
                            **self.fig_config )
 
         #############################################################################
-        positions = self.arms[best_arm].get_positions()
-        fitnesses = self.arms[best_arm].get_fitnesses()
-
-        # Check if need to recluster 
-        avg_search_space = np.mean([arm.search_space for arm in self.arms])
-        splitting_threshold = self.arms[best_arm].search_space / avg_search_space
-        if random.random() < splitting_threshold:
-            if self.verbose: 
-                print('Pass splitting_threshold: %f = %f/%f' 
-                      % (splitting_threshold, 
-                         self.arms[best_arm].search_space, 
-                         avg_search_space) )
-
-            labels = hierarchical_clustering( positions, fitnesses )
-            labels = trim_by_MDL( positions, fitnesses, labels )
-        else:
-            labels = [0]*len(fitnesses)
-
-        max_label = max(labels)
-        if max_label > 0:
-            if self.verbose: 
-                print('\nReclustering... spliting arm %d into %d' 
-                      % (best_arm, max_label+1) )
-
-        # Check if merging is possible
-        if max_label > 0 or len(self.arms) > 1:
-            label = 0
-            old_labels = [label] * len(fitnesses)
-            for i, arm in enumerate(self.arms):
-                if i != best_arm:
-                    positions = np.concatenate(( positions, arm.get_positions() ))
-                    fitnesses = np.concatenate(( fitnesses, arm.get_fitnesses() ))
-                    max_label += 1
-                    label += 1
-                    labels = np.concatenate((labels,[max_label]*len(arm.get_fitnesses())))
-                    old_labels.extend([label]*len(arm.get_fitnesses()))
+            positions = self.arms[best_arm].get_positions()
+            fitnesses = self.arms[best_arm].get_fitnesses()
     
-                
-            labels = trim_by_MDL( positions, fitnesses, labels )
-            old_labels = np.array(old_labels)
-            if not (labels == old_labels).all():
+            # Check if need to recluster 
+            avg_search_space = np.mean([arm.search_space for arm in self.arms])
+            splitting_threshold = self.arms[best_arm].search_space / avg_search_space
+            if random.random() < splitting_threshold:
                 if self.verbose: 
-                    print('Reclustering... estimate %d clusters with MDL' 
-                           % (max(labels)+1) )
-                    print('old_labels:', old_labels)
-                    print('new_labels:', labels)
-                
-                positions, fitnesses = np.array(positions), np.array(fitnesses)
-                cluster_positions, cluster_fitnesses = [], []
-                for i in range( max(labels)+1 ):
-                    indices = np.where(labels == i)[0]
-                    cluster_positions.append(positions[indices])
-                    cluster_fitnesses.append(fitnesses[indices])
-                
-                # Recluster
-                self.recluster(cluster_positions, cluster_fitnesses, labels)
+                    print('Pass splitting_threshold: %f = %f/%f' 
+                          % (splitting_threshold, 
+                             self.arms[best_arm].search_space, 
+                             avg_search_space) )
     
-                self.remain_f_allocation = np.zeros( len(self.arms) )
-                self.remain_f_ratio = self.calculate_remain_f_ratio()
+                labels = hierarchical_clustering( positions, fitnesses )
+                labels = trim_by_MDL( positions, fitnesses, labels )
+            else:
+                labels = [0]*len(fitnesses)
     
-                if self.plot > 0: 
-                    draw_arms( function_id-1, self.arms,
-                               fig_name='it%d_2_recluster.png'% (self.iteration-1), 
-                               **self.fig_config )
+            max_label = max(labels)
+            if max_label > 0:
+                if self.verbose: 
+                    print('\nReclustering... spliting arm %d into %d' 
+                          % (best_arm, max_label+1) )
+    
+            # Check if merging is possible
+            if max_label > 0 or len(self.arms) > 1:
+                label = 0
+                old_labels = [label] * len(fitnesses)
+                for i, arm in enumerate(self.arms):
+                    if i != best_arm:
+                        positions = np.concatenate(( positions, arm.get_positions() ))
+                        fitnesses = np.concatenate(( fitnesses, arm.get_fitnesses() ))
+                        max_label += 1
+                        label += 1
+                        labels = np.concatenate((labels,[max_label]*len(arm.get_fitnesses())))
+                        old_labels.extend([label]*len(arm.get_fitnesses()))
+        
+                    
+                labels = trim_by_MDL( positions, fitnesses, labels )
+                old_labels = np.array(old_labels)
+                if not (labels == old_labels).all():
+                    if self.verbose: 
+                        print('Reclustering... estimate %d clusters with MDL' 
+                               % (max(labels)+1) )
+                        print('old_labels:', old_labels)
+                        print('new_labels:', labels)
+                    
+                    positions, fitnesses = np.array(positions), np.array(fitnesses)
+                    cluster_positions, cluster_fitnesses = [], []
+                    for i in range( max(labels)+1 ):
+                        indices = np.where(labels == i)[0]
+                        cluster_positions.append(positions[indices])
+                        cluster_fitnesses.append(fitnesses[indices])
+                    
+                    # Recluster
+                    self.recluster(cluster_positions, cluster_fitnesses, labels)
+        
+                    self.remain_f_allocation = np.zeros( len(self.arms) )
+                    self.remain_f_ratio = self.calculate_remain_f_ratio()
+        
+                    if self.plot > 0: 
+                        draw_arms( function_id-1, self.arms,
+                                   fig_name='it%d_2_recluster.png'% (self.iteration-1), 
+                                   **self.fig_config )
         #############################################################################
 
 
@@ -687,7 +688,7 @@ class TestBandit:
             if self.verbose:
                 print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' % 
                       (self.iteration, self.FE, error, self.best_fitness))
-                #print('position:%s\n' % self.best_position)
+                print('position:%s\n' % self.best_position)
                 
             if self.plot > 0 and self.iteration % self.plot == 0:
                 draw_arms( self.function_id, self.algo.arms,

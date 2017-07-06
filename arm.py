@@ -1,3 +1,4 @@
+from __future__ import print_function
 from copy import deepcopy
 from operator import attrgetter
 from scipy.optimize import fmin_tnc

@@ -51,11 +51,11 @@ do
     
                 cd $CODE_PATH
                 # Run bandit
-                python3 -u $JOBNAME -b True -a $ALGO -i $F -d $DIM -v True -csv $DIR/F${F}_${DIM}D_${repeat}.csv &>  $DIR/F${F}_${DIM}D_${repeat}.log & 
+                python -u $JOBNAME -b True -a $ALGO -i $F -d $DIM -v True -csv $DIR/F${F}_${DIM}D_${repeat}.csv &>  $DIR/F${F}_${DIM}D_${repeat}.log & 
 
 
                 # Run original Algo
-                #python3 -u $JOBNAME -a $ALGO -i $F -d $DIM -v True -csv $DIR/F${F}_${DIM}D_${repeat}.csv &>  $DIR/F${F}_${DIM}D_${repeat}.log & 
+                #python -u $JOBNAME -a $ALGO -i $F -d $DIM -v True -csv $DIR/F${F}_${DIM}D_${repeat}.csv &>  $DIR/F${F}_${DIM}D_${repeat}.log & 
     
                 echo "Submitting $ALGO F${F}_${DIM}D_${repeat}..."
                 sleep 1
