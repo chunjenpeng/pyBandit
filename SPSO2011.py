@@ -63,6 +63,8 @@ class PSO:
         else:
             self.swarm = self.init_swarm()
 
+        # Ensure exploitation state if particles are within hypersphere
+        self.exploitation = np.zeros(self.n_points)
 
 
     def init_swarm(self):
@@ -126,7 +128,7 @@ class PSO:
             p.previous_best_neighbor = deepcopy(best_neighbor.previous_best)
 
             # Update velocity
-            random_position = self.sample_from_hypersphere(p)
+            random_position, centre = self.sample_from_hypersphere(p)
             p.velocity = self.w * p.velocity + random_position - p.current.position
 
             # Update position
@@ -162,8 +164,16 @@ class PSO:
         p.previous_best_neighbor = deepcopy(best_neighbor.previous_best)
 
         # Update velocity
-        random_position = self.sample_from_hypersphere(p)
+        random_position, centre = self.sample_from_hypersphere(p)
         p.velocity = self.w * p.velocity + random_position - p.current.position
+
+        # Check if new position is within hyperspace (exploitation state)
+        new_position = p.current.position + p.velocity
+        if np.linalg.norm( new_position - centre ) < np.linalg.norm( p.current.position - centre ):
+            self.exploitation[i] = 1
+        else:
+            self.exploitation[i] = 0
+        
 
         # Update position
         p.current.position += p.velocity
@@ -221,18 +231,22 @@ class PSO:
 
     
     def sample_from_hypersphere(self, particle):
+
         x = particle.current.position
         p = particle.previous_best.position
         l = particle.previous_best_neighbor.position
+
         if (l != p).any():
             centre = x + (self.c / 3.0) * (p + l - 2.0 * x)
         else:
             centre = x + (self.c / 2.0) * (p - x)
+
         r_max = np.linalg.norm(centre - x)
         r = np.random.uniform(0.0, r_max)
         v = np.random.uniform(0.0, 1.0, size = self.dimension)
         v = v * (r / np.linalg.norm(v))
-        return centre + v
+
+        return centre + v, centre
 
     
     def check_confinement(self, index):
@@ -474,8 +488,11 @@ class TestSPSO2011:
 
             if self.verbose:
                 error = self.best_fitness - self.optimal_fitness
-                print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' % 
-                      (self.iteration, self.FE, error, self.best_fitness))
+                #print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' % 
+                #      (self.iteration, self.FE, error, self.best_fitness))
+                print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f, exploitation: %d/%d' % 
+                      (self.iteration, self.FE, error, self.best_fitness, 
+                       sum(self.algo.exploitation), self.n_points) )
                 #print('position:%s\n' % self.best_position)
                 
             if self.plot > 0 and self.iteration % self.plot == 0:
@@ -516,7 +533,7 @@ if __name__ == '__main__':
                                 function_id = function_id, # F1 ~ F25
                                 max_evaluations = 10000,
                                 verbose=True,
-                                plot = 1, # number of iterations to draw a figure
+                                plot = 0, # number of iterations to draw a figure
                                 fig_dir = '%s/F%d' % (fig_dir, function_id)
                                 )
     testSPSO2011.run()
