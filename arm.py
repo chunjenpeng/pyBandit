@@ -2,6 +2,7 @@ from copy import deepcopy
 from operator import attrgetter
 from scipy.optimize import fmin_tnc
 from scipy.stats import chisqprob, multivariate_normal
+from scipy.linalg import eigvalsh
 import numpy as np 
 
 from OnePlusOne_ES import OnePlusOne_ES
@@ -13,6 +14,7 @@ from cluster import weighted_gaussian, manhalanobis_distance
 
 
 class Arm:
+
     def __init__(self, obj, n_points, init_positions, init_fitnesses, 
                  algo_type='CMA', exclude=None, matrix=None, **kwargs ):
 
@@ -24,41 +26,35 @@ class Arm:
         self.min_bounds = kwargs.get('min_bounds', np.array([0.0] * self.dimension))
         self.max_bounds = kwargs.get('max_bounds', np.array([1.0] * self.dimension))
 
-        self.evaluation_num = 0
-        self.max_evaluation_num = 10000
-
+        self.pulled_since_update = 0
 
         if matrix is None:
             # Optimize transformation matrix
             best_index = np.argmin( init_fitnesses )
             best_position = init_positions[best_index] 
 
-            self.matrix = Matrix(init_positions)
+            self.matrix = Matrix(init_positions, init_fitnesses, self.min_bounds, self.max_bounds)
             self.matrix.optimize( best_position, 
                                   init_positions, 
                                   exclude, 
-                                  self.min_bounds,
-                                  self.max_bounds,
-                                  max_evaluation_num = 10000 ) 
+                                  max_evaluation_num = 1,
+                                  restart = 1) 
         else:
             self.matrix = matrix
         
+
         # Resize population == n_points
         positions, fitnesses = self.resize_population( init_positions, init_fitnesses )
-        self.mean, self.cov = weighted_gaussian( positions, fitnesses )
 
         # Transform points onto subspace
         trans_positions = self.matrix.transform(positions) 
 
-        # Check boundary is in 0, 1
-        trans_positions = np.clip( trans_positions, 0, 1 )
-
         # Initialize algorithm
         self.init_algo( trans_positions, fitnesses ) 
 
+        # Update weighted mean and covariance
+        self.update_model()
 
-    def update_model(self):
-        self.mean, self.cov = weighted_gaussian( self.get_positions(), self.get_fitnesses() ) 
 
 
     def resize_population(self, init_positions, init_fitnesses):
@@ -113,6 +109,7 @@ class Arm:
 
     def pull(self):
         #best_position, best_fitness = self.algo.run() 
+        self.pulled_since_update += 1
         best_position, best_fitness = self.algo.update_one_particle()
         return self.matrix.inverse_transform([best_position])[0], best_fitness
 
@@ -121,6 +118,7 @@ class Arm:
     def transform(self, new_matrix):
         self.algo.transform( self.matrix, new_matrix )
         self.matrix = deepcopy(new_matrix)
+        self.update_model()
 
 
 
@@ -139,55 +137,33 @@ class Arm:
             self.algo.draw( ax, color )
 
 
-    def reject_model(self):
+
+    def mean_shifted(self):
+
+        #if self.pulled_since_update <= self.n_points:
+        #    return False
+
+        if self.algo_type == 'PSO':
+            if sum(self.algo.exploitation) < self.n_points/2:
+                return False
 
         original_positions = self.get_positions()
         original_fitnesses = self.get_fitnesses()
-        '''
-        from cluster import clustering
-        labels = clustering( original_positions, original_fitnesses )
-        if any(labels) > 0:
-            print(labels)
-        return any(labels) > 0
-        '''    
 
         mean, cov = weighted_gaussian( original_positions, original_fitnesses )
         wilks_statistics = self.n_points * manhalanobis_distance( mean, self.mean, self.cov )
         dof = self.dimension
         p_value = chisqprob( wilks_statistics, dof )
+
         if p_value < 0.05:
-            print('\nReject_model: p_value:%f, mean:'%p_value, mean, self.mean )
+            self.pulled_since_update = 0
+
+            print('\nMean shifted: p_value:%f' % p_value)
+            print('original:', self.mean)
+            print(' current:', mean )
 
         return p_value < 0.05
 
-    # Should DELETE
-    ########################################################################
-    def reached_border(self, r = 0.25):
-        #'''
-        r = 0.3536
-        trans_positions = self.algo.get_positions()
-        best_index = np.argmax(self.algo.get_fitnesses())  
-        trans_best_position = trans_positions[best_index]
-        dist_best_to_center = np.linalg.norm( trans_best_position - 0.5 )
-        if dist_best_to_center > r:
-            best_position = self.matrix.inverse_transform([trans_best_position])[0]
-            print(best_position, trans_best_position, dist_best_to_center)
-        return (dist_best_to_center > r)
-        #'''
-
-        margin = 0.10
-
-        trans_positions = self.algo.get_positions()
-        trans_mean_position = np.mean(trans_positions, axis=0)
-
-        best_index = np.argmax(self.algo.get_fitnesses())  
-        trans_best_position = trans_positions[best_index]
-
-        if ((trans_best_position < margin).any() or (trans_best_position > 1.0-margin).any()) and \
-           ((trans_mean_position < 2.0*margin).any() or (trans_mean_position > 1.0-2.0*margin).any()):
-            return True
-        return False
-    ########################################################################
 
 
     def translate_to(self, original_best_position):
@@ -211,171 +187,24 @@ class Arm:
 
 
 
+    def update_model(self):
+
+        self.mean, self.cov = weighted_gaussian( self.get_positions(), self.get_fitnesses() ) 
+
+        eigenvalues = eigvalsh(self.cov)
+        self.search_space = np.product(eigenvalues)
+
+
+
     def get_positions(self):
         return self.matrix.inverse_transform( self.algo.get_positions() )
+
     def get_fitnesses(self):
         return self.algo.get_fitnesses()
-
 
     def stop(self):
         return self.algo.stop()
 
-    
-
-    # Should Remove...
-    def update_matrix(self, best, include, exclude):
-
-
-        # Repeatedly used parameters in evaluate
-        self.original_best_position = deepcopy(best)
-        self.original_positions_in  = deepcopy(include)
-        self.original_positions_out = deepcopy(exclude)
-        self.samples = np.random.uniform(0, 1,
-                                         size=(self.n_samples, self.dimension))
-
-        best_solution = self.matrix.matrix.ravel()
-        best_score = self.evaluate( best_solution )
-        #print( 'Init score:', self.evaluate(best_solution, debug=True) )
-
-
-        '''
-        # Newton Conjugate-Gradient algorithm
-        self.evaluation_num = 0
-        while self.evaluation_num < self.max_evaluation_num:
-            solution = best_solution + np.random.uniform( -1e-3, 1e-3, size=best_solution.shape )
-            #print( 'Init score:', self.evaluate(solution) )
-            res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000, disp=0)
-            #res = fmin_tnc(self.evaluate, solution, approx_grad=True, maxfun=1000 )
-            x_best = res[0]
-            score = self.evaluate( x_best )
-            if score < best_score:
-                best_score = score
-                best_solution = x_best
-            #print( 'Final score:', score) 
-
-        '''
-
-        '''
-        # CMA-ES
-        import cma
-        es = cma.CMAEvolutionStrategy( best_solution.tolist(), 1e-4, 
-                                       {'maxiter': self.max_evaluation_num} )
-
-        while not es.stop():
-            solutions = es.ask()
-            es.tell( solutions, [self.evaluate(s) for s in solutions] )
-            x_best = es.result()[0]
-            score = self.evaluate( x_best )
-            if score < best_score:
-                best_score = score
-                best_solution = x_best
-            #print( 'Final score:', score) 
-        '''
-        repeat = 20
-        for _ in range(repeat):
-            es = OnePlusOne_ES( self.evaluate, len(best_solution), 
-                                parent = self.matrix.matrix.ravel(),
-                                #parent = best_solution, 
-                                step = 0.1,
-                                max_iteration = self.max_evaluation_num / repeat )
-            while not es.stop():
-                x_best, score = es.run()
-            if score < best_score:
-                best_score = score
-                best_solution = x_best
-            #print( 'Final score:', score) 
-
-
-        self.matrix.matrix = np.array(best_solution).reshape( self.matrix.matrix.shape )
-        #print( 'Final score:', self.evaluate(best_solution, debug=True) )
-
-
-    def evaluate(self, X, debug=False):
-        self.evaluation_num += 1
-        self.matrix.matrix = np.array(X).reshape( self.matrix.matrix.shape )
-
-        trans_best = self.matrix.transform([self.original_best_position])[0]
-        
-        trans_in   = self.matrix.transform(self.original_positions_in)
-
-        if self.original_positions_out.any():
-            trans_out  = self.matrix.transform(self.original_positions_out)
-            trans_out  = trans_out[ np.all( trans_out >= 0, axis=1) ]
-            trans_out  = trans_out[ np.all( trans_out <= 1, axis=1) ]
-
-
-        ori_samples = self.matrix.inverse_transform(self.samples)
-
-        out_min_bounds = self.min_bounds - ori_samples
-        out_min_bounds = out_min_bounds[ out_min_bounds > 0 ]
-        dist_out_min_bounds = sum( out_min_bounds )
-
-        out_max_bounds = ori_samples - self.max_bounds
-        out_max_bounds = out_max_bounds[ out_max_bounds > 0 ]
-        dist_out_max_bounds = sum( out_max_bounds )
-
-
-        # Features to be minimized
-        dist_best_to_center = np.linalg.norm( trans_best - 0.5 )
-
-        dist_should_be_in   = abs(sum( trans_in[ np.where(trans_in > 1.0) ] - 1.0 ))
-        dist_should_be_in  += abs(sum( trans_in[ np.where(trans_in < 0.0) ] ))
-
-        dist_should_be_out = 0 
-        if self.original_positions_out.any():
-            lower_half = np.where( np.logical_and( trans_out >= 0.0, trans_out < 0.5 ) )
-            upper_half = np.where( np.logical_and( trans_out >= 0.5, trans_out <= 1.0 ) )
-            dist_should_be_out  = abs(sum( trans_out[ lower_half ] ))
-            dist_should_be_out += abs(sum( trans_out[ upper_half ] - 0.5 ))
-
-        
-        reconstruct = self.matrix.inverse_transform( np.clip(trans_in, 0, 1) )
-        reconstruct_error = sum( np.linalg.norm( p1 - p2 ) \
-                                 for p1, p2 in zip(reconstruct, self.original_positions_in) )
-
-        trans_std = np.std( (trans_in - trans_best), axis=0 )
-        dist_std = sum( abs(trans_std - 0.3) ) 
-        
-
-        score  = 0.0
-        score += 100*reconstruct_error 
-        # Limit in global boundary
-        score += dist_should_be_in 
-        score += dist_should_be_out 
-        # Split point in and out of cluster
-        score += dist_out_min_bounds
-        score += dist_out_max_bounds
-        # Approximate a Normal distribution centering at trans_best
-        score += dist_best_to_center
-        score += dist_std
-
-        if not debug:
-            return score 
-        else:
-            #print('trans_out:\n', trans_out)
-            #print('trans_in:\n', trans_in)
-            #print('trans_best:\n', trans_best)
-            #print('original:\n', self.original_positions_in)
-            #print('reconstruct:\n', reconstruct)
-            #if reconstruct_error > 1:
-            if True:
-                print('dist_in  :', dist_should_be_in)
-                print('dist_min :', dist_out_min_bounds)
-                print('dist_max :', dist_out_max_bounds)
-                print('dist_out :', dist_should_be_out)
-                print('dist_best:', dist_best_to_center)
-                print('std      :', trans_std)
-                print('dist_std :', dist_std)
-                print('error    :', reconstruct_error)
-                print('score    :', score)
-                #print(self.matrix.matrix)
-                subspace_border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1] ])
-                border = self.matrix.inverse_transform( subspace_border )
-                #print(subspace_border)
-                #print(border)
-                #print()
-            return score 
-            #return reconstruct_error
 
 
 
@@ -393,11 +222,11 @@ def draw_arms(function_id, arms, **kwargs):
     function = CEC2005(dim)[function_id].objective_function
     optimal_pos = CEC2005(dim)[function_id].get_optimal_solutions()[0].phenome
     boundary = Boundary(dim, function_id)
-    plot_subspace = False
+    plot_subspace = True
 
     inch_size = 4
     k = len(arms)
-    fig_w = (k + 1) if plot_subspace else 1.2
+    fig_w = (k + 1.2) if plot_subspace else 1.2
     fig_h = 1
     fig = plt.figure(figsize = (fig_w * inch_size, fig_h * inch_size))
     cmap = cm.coolwarm
@@ -414,6 +243,7 @@ def draw_arms(function_id, arms, **kwargs):
 
     # Plot contour
     ax = fig.add_subplot(fig_h, fig_w, 1)
+    #ax.set_facecolor('black')
 
     # Get Mesh Solutions for contour
     step = (boundary.max_bounds[0] - boundary.min_bounds[0]) / 100
@@ -453,6 +283,7 @@ def draw_arms(function_id, arms, **kwargs):
 
             color = scatter_cmap[i]
             ax_sub = fig.add_subplot(fig_h, fig_w, i + 2)
+            #ax_sub.set_facecolor('black')
             ax_sub.set_xlim([ -0.01, 1.01])
             ax_sub.set_ylim([ -0.01, 1.01])
 
@@ -465,7 +296,8 @@ def draw_arms(function_id, arms, **kwargs):
             Z = np.array( [ function(mesh_position) for mesh_position in original_positions ] )
             Z = Z.reshape(X.shape)
 
-            cset = ax_sub.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+            #cset = ax_sub.contourf(X, Y, Z, cmap = cmap, vmin = vmin, vmax = vmax)
+            cset = ax_sub.contour(X, Y, Z, cmap = cmap)
 
 
             # Plot scatter points in each arm
@@ -600,12 +432,13 @@ def testArm(plot=False):
     from sklearn.cluster import KMeans
     from boundary import Boundary
 
-    function_id = 12
+    function_id = 6 # 0 ~ 24
+    algo_type='ACOR'
     dimension = 2 
-    n_points = 12 
-    init_num_points = 120
+    n_points = 50 
+    init_num_points = 100 * dimension
     n_sample = 100 * dimension
-    k = 3
+    k = 1
     function = CEC2005(dimension)[function_id].objective_function
     init_min_bounds = Boundary(dimension, function_id).init_min_bounds
     init_max_bounds = Boundary(dimension, function_id).init_max_bounds
@@ -634,9 +467,9 @@ def testArm(plot=False):
                    n_points,
                    positions[indices],
                    fitnesses[indices],
-                   algo_type='PSO',
+                   algo_type = algo_type,
                    exclude = [],
-                   matrix = Matrix( positions[indices] ),
+                   matrix = Matrix( positions[indices], fitnesses[indices], min_bounds, max_bounds ),
                    min_bounds = min_bounds,
                    max_bounds = max_bounds
                   )
@@ -669,10 +502,7 @@ def testArm(plot=False):
         print('optimizing matrix of arm %d ...' % i )
         arms[i].matrix.optimize( best, 
                                  positions[indices], 
-                                 exclude, 
-                                 min_bounds,
-                                 max_bounds,
-                                 max_evaluation_num = 1e4 ) 
+                                 exclude ) 
 
         if plot: draw_optimization( function_id, 
                                     opt_points,
