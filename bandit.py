@@ -544,6 +544,7 @@ class Bandit:
                                 subspace_position = arm.matrix.transform([replace_position])[0]
                                 replace_fitness  = cluster_fitnesses[new_index][index] 
                                 #if self.verbose:
+                                #if self.verbose:
                                 #    print('old_rank[%d] = %d is replaced by rank %d, f = %f, pos=' 
                                 #          % (i, rank, insert_rank, replace_fitness), replace_position)
 
@@ -560,9 +561,16 @@ class Bandit:
                             replace_positions.append(subspace_position)
                             replace_fitnesses.append(replace_fitness)
 
-
-
-                    arm.algo.replace( replace_indices, replace_positions, replace_fitnesses ) 
+                
+                    try:
+                        arm.algo.replace( replace_indices, replace_positions, replace_fitnesses ) 
+                    except AssertionError as e:
+                        arm = None
+                        
+                        for i, p, f in zip(replace_indices, replace_positions, replace_fitnesses):
+                            print(i, p, f)
+                        input()
+                        break
                     arm.update_model()
                     break
 
@@ -731,11 +739,11 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 40,
+    testBandit = TestBandit( n_points = 30,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'CMA', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
                              plot = 1000, 
                              fig_dir = '%s/F%d' % (fig_dir, function_id)

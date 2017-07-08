@@ -50,8 +50,8 @@ class Matrix:
         return np.dot(scale_matrix, translate_matrix)
 
     
-
-    def transform(self, positions, **kwargs):
+    '''
+    def transform_without_clip(self, positions, **kwargs):
         get_original = kwargs.get('get_original', False)
         if len(positions) == 0:
             return []
@@ -66,7 +66,37 @@ class Matrix:
             trans_positions = trans_positions[:, :-1] / w[:, None]
 
         # Check all points falls in [0,1]^D subspace
-        trans_positions = np.clip( trans_positions, 0, 1 )
+        #trans_positions = np.clip( trans_positions, 0, 1 )
+        return trans_positions
+    '''
+
+    
+    def transform(self, positions, **kwargs):
+        get_original = kwargs.get('get_original', False)
+        if len(positions) == 0:
+            return []
+
+        positions = np.array(positions)
+        positions = np.hstack((positions, np.ones((positions.shape[0], 1))))
+        trans_positions = np.dot(self.matrix, positions.T).T
+
+        if not get_original:
+            w = trans_positions[:, -1]
+            w[w == 0] = self.delta
+            trans_positions = trans_positions[:, :-1] / w[:, None]
+
+        # Project all points out of [0,1]^D subspace
+        # onto a sphere( [0.5]^D, r = 0.5 )
+        num_points, dimension = trans_positions.shape
+        center = 0.5*np.ones(dimension)
+        for i, trans_position in enumerate(trans_positions):
+            #if dist_to_center > 0.5:
+            if (trans_position > 1).any() or (trans_position < 0).any():
+                vector = trans_position - center 
+                dist_to_center = np.linalg.norm(vector)
+                vector = (0.5/dist_to_center) * vector
+                trans_positions[i] = center + vector
+
         return trans_positions
 
 
