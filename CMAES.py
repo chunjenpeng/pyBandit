@@ -44,7 +44,8 @@ class CMA:
             self.es.tell(self.positions.tolist(), self.fitnesses.tolist())
         else:
             best_position, best_fitness = self.run()            
-    
+
+        self.new_positions = self.es.ask()
 
 
     def run(self):
@@ -67,13 +68,20 @@ class CMA:
 
 
     def update_one_particle(self):
-        position = self.es.ask(1)[0]
+        #position = self.es.ask(1)[0]
+        position = self.new_positions[self.update_count]
+        position = self.es.repair_genotype(position)
+        position = self.es.gp.pheno( position, into_bounds=self.es.boundary_handler.repair)
+        #fixed_position = self.es.gp.pheno( position, into_bounds=self.es.boundary_handler.repair)
         self.positions[self.update_count] = position 
         self.fitnesses[self.update_count] = self.obj(position)
 
         self.update_count += 1 
         if self.update_count >= self.n_points:
+
             self.es.tell(self.positions, self.fitnesses)
+
+            self.new_positions = self.es.ask()
             self.update_count = 0
 
         index, best_fitness = min( enumerate(self.fitnesses), key = itemgetter(1) )
@@ -86,12 +94,16 @@ class CMA:
     def replace(self, indices, positions, fitnesses):
 
         for i, position, fitness in zip(indices, positions, fitnesses):
-            self.positions[i] = position
+            fixed_position = self.es.repair_genotype(position)
+            fixed_position = self.es.gp.pheno( fixed_position, into_bounds=self.es.boundary_handler.repair)
+
+            self.positions[i] = fixed_position
             self.fitnesses[i] = fitness
 
         _ = self.es.ask()
         self.es.tell(self.positions, self.fitnesses)
         self.update_count = 0
+        self.new_positions = self.es.ask()
 
 
 
@@ -120,7 +132,7 @@ class CMA:
                                         copy_always=True )
 
 
-    def draw(self, ax, color, matrix = None):
+    def draw(self, ax, color, matrix = None, draw_algo=True):
 
         # Draw scatter
         X = self.get_positions()
@@ -130,30 +142,31 @@ class CMA:
         ax.scatter(X[:,0], X[:,1], color=color, s=10)
 
         # Draw covariance ellipse
-        pos = self.es.gp.pheno( self.es.mean, into_bounds=self.es.boundary_handler.repair)
-        cov = self.es.C * (self.es.sigma**2)
+        if draw_algo:
+            pos = self.es.gp.pheno( self.es.mean, into_bounds=self.es.boundary_handler.repair)
+            cov = self.es.C * (self.es.sigma**2)
 
-        vals, vecs = np.linalg.eigh(cov)
-        order = vals.argsort()[::-1]
-        vals, vecs = vals[order], vecs[:,order]
+            vals, vecs = np.linalg.eigh(cov)
+            order = vals.argsort()[::-1]
+            vals, vecs = vals[order], vecs[:,order]
 
-        if matrix is not None:
-            pos = matrix.inverse_transform( [pos] )[0]
-            #cov = matrix.inverse_transform( self.es.C ) * \
-            #      (matrix.inverse_transform( [self.es.sigma] )[0] ** 2 )
-            vals = abs(matrix.inverse_transform( [vals] )[0])
-            vecs = matrix.inverse_transform( vecs )
+            if matrix is not None:
+                pos = matrix.inverse_transform( [pos] )[0]
+                #cov = matrix.inverse_transform( self.es.C ) * \
+                #      (matrix.inverse_transform( [self.es.sigma] )[0] ** 2 )
+                vals = abs(matrix.inverse_transform( [vals] )[0])
+                vecs = matrix.inverse_transform( vecs )
 
-        theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
-        for nstd in range(1,3):
-            width, height = 2 * nstd * np.sqrt(abs(vals))
-            ellip = Ellipse( xy = pos,
-                             width = width, 
-                             height = height,
-                             angle = theta )
-            ellip.set_alpha(0.2)
-            ellip.set_facecolor(color)
-            ax.add_artist(ellip)
+            theta = np.degrees(np.arctan2(*vecs[:,0][::-1]))
+            for nstd in range(1,3):
+                width, height = 2 * nstd * np.sqrt(abs(vals))
+                ellip = Ellipse( xy = pos,
+                                 width = width, 
+                                 height = height,
+                                 angle = theta )
+                ellip.set_alpha(0.2)
+                ellip.set_facecolor(color)
+                ax.add_artist(ellip)
 
 
 

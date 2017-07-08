@@ -327,7 +327,7 @@ class PSO:
 
 
 
-    def draw(self, ax, color, matrix = None):
+    def draw(self, ax, color, matrix = None, draw_algo=True):
         # Draw arrow
         positions = np.array([ p.current.position for p in self.swarm ])
         velocities = np.array([ p.velocity for p in self.swarm ])
@@ -343,13 +343,17 @@ class PSO:
 
         X = positions[:,0]
         Y = positions[:,1]
+
         U = velocities[:,0]
         V = velocities[:,1]
         #M = np.hypot(U, V)
-        Q = ax.quiver(X, Y, U, V, color=color, alpha=0.4, units='x', pivot='tip', scale=1)
-    
         # Draw scatter
         ax.scatter(X, Y, color=color, s=10)
+
+        # Draw velocity arrow
+        if draw_algo:
+            Q = ax.quiver(X, Y, U, V, color=color, alpha=0.4, units='x', pivot='tip', scale=1)
+    
 
 
 

@@ -198,17 +198,19 @@ class ACOR:
         return self.archive[:, -1]
     
     
-    def draw(self, ax, color, matrix=None):
-        X = self.get_positions()
+    def draw(self, ax, color, matrix=None, draw_algo=True):
 
+        X = self.get_positions()
         if matrix is not None:
             X = matrix.inverse_transform(X)
 
-        # Draw best solution
-        ax.scatter(X[0,0], X[0,1], color='y', marker = '*', s=150)
-
         # Draw scatter
         ax.scatter(X[:,0], X[:,1], color=color, s=10)
+
+        # Draw best solution
+        if draw_algo:
+            ax.scatter(X[0,0], X[0,1], color='y', marker = '*', s=150)
+
 
 
 
