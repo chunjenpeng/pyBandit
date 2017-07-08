@@ -144,11 +144,16 @@ class Arm:
         #    return False
 
         if self.algo_type == 'PSO':
-            if sum(self.algo.exploitation) < self.n_points/2:
+            if sum(self.algo.exploitation) <= self.n_points/2:
                 return False
 
-        original_positions = self.get_positions()
-        original_fitnesses = self.get_fitnesses()
+            positions = self.algo.get_previous_best_positions()
+            original_positions = self.matrix.inverse_transform( positions )
+            original_fitnesses = self.algo.get_previous_best_fitnesses()
+        else:
+            original_positions = self.get_positions()
+            original_fitnesses = self.get_fitnesses()
+
 
         mean, cov = weighted_gaussian( original_positions, original_fitnesses )
         wilks_statistics = self.n_points * manhalanobis_distance( mean, self.mean, self.cov )
@@ -188,8 +193,15 @@ class Arm:
 
 
     def update_model(self):
+        if self.algo_type == 'PSO':
+            positions = self.algo.get_previous_best_positions()
+            original_positions = self.matrix.inverse_transform( positions )
+            original_fitnesses = self.algo.get_previous_best_fitnesses()
+        else:
+            original_positions = self.get_positions()
+            original_fitnesses = self.get_fitnesses()
 
-        self.mean, self.cov = weighted_gaussian( self.get_positions(), self.get_fitnesses() ) 
+        self.mean, self.cov = weighted_gaussian( original_positions, original_fitnesses ) 
 
         eigenvalues = eigvalsh(self.cov)
         self.search_space = np.product(eigenvalues)
@@ -222,7 +234,7 @@ def draw_arms(function_id, arms, **kwargs):
     function = CEC2005(dim)[function_id].objective_function
     optimal_pos = CEC2005(dim)[function_id].get_optimal_solutions()[0].phenome
     boundary = Boundary(dim, function_id)
-    plot_subspace = True
+    plot_subspace = False
 
     inch_size = 4
     k = len(arms)
