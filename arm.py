@@ -122,7 +122,7 @@ class Arm:
 
 
 
-    def draw(self, ax, color, on_subspace=False):
+    def draw(self, ax, color, on_subspace=False, draw_algo=True):
 
         # Plot borders on original search space
         border = np.array([ [ 0, 0], [ 1, 0], [ 1, 1], [ 0, 1], [ 0, 0]])
@@ -132,7 +132,7 @@ class Arm:
 
         # Plot algorithm
         if not on_subspace:
-            self.algo.draw( ax, color, self.matrix )
+            self.algo.draw( ax, color, self.matrix, draw_algo=draw_algo )
         else:
             self.algo.draw( ax, color )
 
@@ -156,6 +156,14 @@ class Arm:
 
 
         mean, cov = weighted_gaussian( original_positions, original_fitnesses )
+
+        '''
+        trans_mean = self.matrix.transform([mean])[0]
+        dist_to_center = np.linalg.norm( trans_mean - 0.5*np.ones(len(trans_mean)) )
+        if dist_to_center >= 0.3:
+            return True
+        '''
+
         wilks_statistics = self.n_points * manhalanobis_distance( mean, self.mean, self.cov )
         dof = self.dimension
         p_value = chisqprob( wilks_statistics, dof )
@@ -234,7 +242,7 @@ def draw_arms(function_id, arms, **kwargs):
     function = CEC2005(dim)[function_id].objective_function
     optimal_pos = CEC2005(dim)[function_id].get_optimal_solutions()[0].phenome
     boundary = Boundary(dim, function_id)
-    plot_subspace = False
+    plot_subspace = True
 
     inch_size = 4
     k = len(arms)
@@ -285,7 +293,7 @@ def draw_arms(function_id, arms, **kwargs):
     # Plot scatter points in each arm
     colors = iter(scatter_cmap)
     for arm in arms:
-        arm.draw( ax, next(colors), on_subspace=False )
+        arm.draw( ax, next(colors), on_subspace=False, draw_algo=False )
 
 
 
