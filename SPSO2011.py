@@ -314,6 +314,19 @@ class PSO:
         return [ p.current.fitness for p in self.swarm ]
 
 
+    def get_previous_best_positions(self):
+        return [ p.previous_best.position for p in self.swarm ]
+    def get_previous_best_fitnesses(self):
+        return [ p.previous_best.fitness for p in self.swarm ]
+
+
+    def get_previous_best_neighbor_positions(self):
+        return [ p.previous_best_neighbor.position for p in self.swarm ]
+    def get_previous_best_neighbor_fitnesses(self):
+        return [ p.previous_best_neighbor.fitness for p in self.swarm ]
+
+
+
     def draw(self, ax, color, matrix = None):
         # Draw arrow
         positions = np.array([ p.current.position for p in self.swarm ])
