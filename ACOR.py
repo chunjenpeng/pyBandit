@@ -63,7 +63,7 @@ class ACOR:
 
         # Parameters for termiantion
         self.iteration = 0
-        self.converge_error = 1e-8
+        self.converge_error = 1e-12
         self.should_terminate = False
         self.update_count = 0
         self.new_archive = np.zeros((self.n_ants, self.dimension+1))
