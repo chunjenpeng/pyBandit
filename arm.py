@@ -35,11 +35,9 @@ class Arm:
             best_position = init_positions[best_index] 
 
             self.matrix = Matrix(init_positions, init_fitnesses, self.min_bounds, self.max_bounds)
-            self.matrix.optimize( best_position, 
-                                  init_positions, 
-                                  exclude, 
-                                  max_evaluation_num = 1,
-                                  restart = 1) 
+            self.matrix.optimize( init_positions, 
+                                  init_fitnesses,
+                                  exclude) 
         else:
             self.matrix = matrix
         
@@ -521,8 +519,8 @@ def testArm(plot=False):
 
 
         print('optimizing matrix of arm %d ...' % i )
-        arms[i].matrix.optimize( best, 
-                                 positions[indices], 
+        arms[i].matrix.optimize( positions[indices], 
+                                 fitnesses[indices],
                                  exclude ) 
 
         if plot: draw_optimization( function_id, 

@@ -123,8 +123,8 @@ class Bandit:
             exclude = np.array(exclude)
 
             matrix = Matrix(include, include_fitnesses, self.min_bounds, self.max_bounds)
-            matrix.optimize( best_position,
-                             include,
+            matrix.optimize( include,
+                             include_fitnesses,
                              exclude )
 
             self.arms[best_arm].transform(matrix)
@@ -499,8 +499,8 @@ class Bandit:
 
                     # Optimize matrix
                     if self.verbose: print('\nOptimizing matrix for new arm %d' % new_index )
-                    matrices[new_index].optimize( best, 
-                                                  cluster_positions[new_index], 
+                    matrices[new_index].optimize( cluster_positions[new_index], 
+                                                  cluster_fitnesses[new_index], 
                                                   exclude )
 
                     # Copy unchanged arm to new arms
@@ -688,8 +688,6 @@ class TestBandit:
                                                 (self.function_id+1, self.FE, error) )
                 draw_arms( self.function_id, self.algo.arms,
                            fig_name='it%d.png'%self.iteration, **self.fig_config )
-            raise Exception('Found Optima!')
-
         return fitness
 
     
@@ -736,7 +734,7 @@ class TestBandit:
 if __name__ == '__main__':
 
     function_id = 9 # F1 ~ F25
-    fig_dir = 'test_bandit_2' 
+    fig_dir = 'test_bandit' 
 
     if len(sys.argv) == 3:
         function_id = int(sys.argv[1])
@@ -744,11 +742,11 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 50,
+    testBandit = TestBandit( n_points = 40,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
                              plot = 1000, 
                              fig_dir = '%s/F%d' % (fig_dir, function_id)

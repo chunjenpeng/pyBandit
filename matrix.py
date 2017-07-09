@@ -11,6 +11,7 @@ class Matrix:
         self.delta = 1e-08
         self.min_bounds = min_bounds
         self.max_bounds = max_bounds
+        self.dimension = len(positions[0])
 
         if matrix is None:
             self.matrix = self.init_matrix( positions, fitnesses )
@@ -20,8 +21,6 @@ class Matrix:
 
     
     def init_matrix(self, positions, fitnesses):
-
-        dim = len(positions[0])
 
         best = positions[ np.argmin(fitnesses) ]
         mean, cov = weighted_gaussian(positions, fitnesses)
@@ -38,13 +37,13 @@ class Matrix:
         amin = np.maximum( amin + np.clip(transfer, None, 0), self.min_bounds )
 
         scale = amax - amin
-        scale_matrix = np.eye(dim + 1)
-        for i in range(dim):
+        scale_matrix = np.eye(self.dimension + 1)
+        for i in range(self.dimension):
             if scale[i] != 0:
                 scale_matrix[i, i] = 1.0 / scale[i]
 
 
-        translate_matrix = np.eye(dim + 1)
+        translate_matrix = np.eye(self.dimension + 1)
         translate_matrix[:-1, -1] = -(amin.T)
 
         return np.dot(scale_matrix, translate_matrix)
@@ -73,6 +72,7 @@ class Matrix:
     
     def transform(self, positions, **kwargs):
         get_original = kwargs.get('get_original', False)
+        without_clip = kwargs.get('without_clip', False)
         if len(positions) == 0:
             return []
 
@@ -86,16 +86,16 @@ class Matrix:
             trans_positions = trans_positions[:, :-1] / w[:, None]
 
         # Project all points out of [0,1]^D subspace
-        # onto a sphere( [0.5]^D, r = 0.5 )
-        num_points, dimension = trans_positions.shape
-        center = 0.5*np.ones(dimension)
-        for i, trans_position in enumerate(trans_positions):
-            #if dist_to_center > 0.5:
-            if (trans_position > 1).any() or (trans_position < 0).any():
-                vector = trans_position - center 
-                dist_to_center = np.linalg.norm(vector)
-                vector = (0.5/dist_to_center) * vector
-                trans_positions[i] = center + vector
+        # onto a sphere( center = [0.5]^D, r = 0.5 )
+        if not without_clip:
+            num_points, dimension = trans_positions.shape
+            center = 0.5*np.ones(dimension)
+            for i, trans_position in enumerate(trans_positions):
+                if (trans_position > 1).any() or (trans_position < 0).any():
+                    vector = trans_position - center 
+                    dist_to_center = np.linalg.norm(vector)
+                    vector = (0.5/dist_to_center) * vector
+                    trans_positions[i] = center + vector
 
         return trans_positions
 
@@ -119,14 +119,15 @@ class Matrix:
 
 
 
-    def optimize(self, best, include, exclude, max_evaluation_num = 1, restart = 1):
+    def optimize(self, include, include_fitnesses, exclude, max_evaluation_num = 100, restart = 3):
 
         dimension = self.matrix.shape[0] - 1
         n_samples = 100 * dimension 
 
         # Repeatedly used parameters in evaluate
-        self.original_best_position = deepcopy(best)
+        #self.original_best_position = deepcopy(best)
         self.original_positions_in  = deepcopy(include)
+        self.original_fitnesses_in  = deepcopy(include_fitnesses)
         self.original_positions_out = deepcopy(exclude)
         self.samples = np.random.uniform(0, 1, size=(n_samples, dimension))
 
@@ -155,12 +156,11 @@ class Matrix:
     def evaluate(self, X, debug=False):
         self.matrix = np.array(X).reshape( self.matrix.shape )
 
-        trans_best = self.transform([self.original_best_position])[0]
-        
-        trans_in   = self.transform(self.original_positions_in)
+        trans_in   = self.transform(self.original_positions_in, without_clip = True)
+        mean, cov = weighted_gaussian(trans_in, self.original_fitnesses_in)
 
         if self.original_positions_out.any():
-            trans_out  = self.transform(self.original_positions_out)
+            trans_out  = self.transform(self.original_positions_out, without_clip = True)
             trans_out  = trans_out[ np.all( trans_out >= 0, axis=1) ]
             trans_out  = trans_out[ np.all( trans_out <= 1, axis=1) ]
 
@@ -177,7 +177,10 @@ class Matrix:
 
 
         # Features to be minimized
-        dist_best_to_center = np.linalg.norm( trans_best - 0.5 )
+        dist_mean_to_center = np.linalg.norm( mean - 0.5 )
+
+        normal_cov = 0.25*np.eye(self.dimension)
+        dist_cov_to_norm_cov = np.linalg.norm(cov-normal_cov)
 
         dist_should_be_in   = abs(sum( trans_in[ np.where(trans_in > 1.0) ] - 1.0 ))
         dist_should_be_in  += abs(sum( trans_in[ np.where(trans_in < 0.0) ] ))
@@ -190,13 +193,11 @@ class Matrix:
             dist_should_be_out += abs(sum( trans_out[ upper_half ] - 0.5 ))
 
         
-        reconstruct = self.inverse_transform( np.clip(trans_in, 0, 1) )
+
+        clipped_trans_in = self.transform(self.original_positions_in, without_clip = False)
+        reconstruct = self.inverse_transform( clipped_trans_in )
         reconstruct_error = sum( np.linalg.norm( p1 - p2 ) \
                                  for p1, p2 in zip(reconstruct, self.original_positions_in) )
-
-        trans_std = np.std( (trans_in - trans_best), axis=0 )
-        dist_std = sum( abs(trans_std - 0.3) ) 
-        
 
         score  = 0.0
         score += 100*reconstruct_error 
@@ -208,9 +209,9 @@ class Matrix:
             score += len(trans_out)
         score += dist_out_min_bounds
         score += dist_out_max_bounds
-        # Approximate a Normal distribution centering at trans_best
-        score += dist_best_to_center
-        #score += dist_std
+        # Approximate a Normal distribution N(mean, cov) on subspace
+        score += dist_mean_to_center
+        score += dist_cov_to_norm_cov
 
         if not debug:
             return score 
