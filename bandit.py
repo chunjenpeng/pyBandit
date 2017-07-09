@@ -221,9 +221,10 @@ class Bandit:
     
     def calculate_remain_f_ratio(self, threshold = 5000):
     
-        self.check_point = max( threshold, int(self.f_left/2) )
+        #self.check_point = max( threshold, int(self.f_left/2) )
+        self.check_point = int(self.f_left/2) 
         c = Combination(self.f_left, len(self.arms), self.n_points*len(self.arms), self.get_ranks())
-        ratio = c.combination / sum(c.combination)
+        ratio = c.combination / float(sum(c.combination))
 
         if self.verbose:
             print('\nRecalculate ratio:', c.combination, '[%s]'%','.join('%6.3f'%i for i in ratio))
