@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys, random
 from operator import attrgetter
 from collections import OrderedDict
@@ -68,8 +69,11 @@ class Bandit:
         if best_arm is None:
             return self.best_position, self.best_fitness
         
-        #best_position, best_fitness = self.arms[best_arm].pull()
+        best_position, best_fitness = self.arms[best_arm].pull()
+        if self.verbose:
+            print('best fitness:%f, position:' % best_fitness, best_position)
         ################################################
+        '''
         try:
             best_position, best_fitness = self.arms[best_arm].pull()
         except AssertionError as e:
@@ -78,6 +82,7 @@ class Bandit:
                        **self.fig_config )
             print(self.arms[best_arm].algo.es.D)
             raise e
+        '''
         ################################################
 
         self.remain_f_allocation[best_arm] -= 1.0
@@ -707,7 +712,7 @@ class TestBandit:
             if self.verbose:
                 print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' % 
                       (self.iteration, self.FE, error, self.best_fitness))
-                #print('position:%s\n' % self.best_position)
+                print('position:%s\n' % self.best_position)
                 
             if self.plot > 0 and self.iteration % self.plot == 0:
                 draw_arms( self.function_id, self.algo.arms,
@@ -739,11 +744,11 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 30,
+    testBandit = TestBandit( n_points = 50,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'CMA', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'ACOR', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
                              plot = 1000, 
                              fig_dir = '%s/F%d' % (fig_dir, function_id)

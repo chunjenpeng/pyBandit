@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os, sys, argparse
 from collections import OrderedDict
 
@@ -13,7 +14,7 @@ import pandas as pd
 
 
 class Algo:
-    def __init__(self, n_points=10, dimension=2, function_id=0, use_bandit=False, 
+    def __init__(self, n_points=None, dimension=2, function_id=0, use_bandit=False, 
                  algo_type='CMA', max_evaluations=1e4, verbose=False, plot=0, fig_dir=None):
 
         if use_bandit:
@@ -27,7 +28,7 @@ class Algo:
             elif algo_type == 'ACOR':
                 self.n_points = 50 
             else:
-                self.n_points = 10 
+                self.n_points = 30 
         else:
             self.n_points = n_points
 
@@ -153,9 +154,10 @@ class Algo:
 
     def print_status(self):
         error = self.best_fitness - self.optimal_fitness
-        print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' %
-              (self.iteration, self.FE, error, self.best_fitness) )
-        #print('position:', self.best_position) 
+        #print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' %
+        #      (self.iteration, self.FE, error, self.best_fitness) )
+        print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f, best:' %
+              (self.iteration, self.FE, error, self.best_fitness), self.best_position )
 
 
 
