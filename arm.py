@@ -171,9 +171,9 @@ class Arm:
         if p_value < 0.05:
             self.pulled_since_update = 0
 
-            print('\nMean shifted: p_value:%f' % p_value)
-            print('original:', self.mean)
-            print(' current:', mean )
+            #print('\nMean shifted: p_value:%f' % p_value)
+            #print('original:', self.mean)
+            #print(' current:', mean )
 
         return p_value < 0.05
 
