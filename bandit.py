@@ -138,7 +138,7 @@ class Bandit:
                            **self.fig_config )
 
         #############################################################################
-            #if True:
+        if self.arms[best_arm].population_updated_at_least_once():
             positions = self.arms[best_arm].get_positions()
             fitnesses = self.arms[best_arm].get_fitnesses()
     
@@ -159,6 +159,7 @@ class Bandit:
     
             max_label = max(labels)
             if max_label > 0:
+                self.arms[best_arm].pulled_since_update = 0
                 if self.verbose: 
                     print('\nReclustering... spliting arm %d into %d' 
                           % (best_arm, max_label+1) )
@@ -680,6 +681,7 @@ class TestBandit:
         if error < self.termination_error:
             self.best_fitness = fitness
             self.best_position = x
+            '''
             print('Iter:%d, FE:%d, error:%.2e, fitness:%.2f' % 
                   (self.iteration, self.FE, error, self.best_fitness))
             print('position:%s\n' % self.best_position)
@@ -689,6 +691,8 @@ class TestBandit:
                                                 (self.function_id+1, self.FE, error) )
                 draw_arms( self.function_id, self.algo.arms,
                            fig_name='it%d.png'%self.iteration, **self.fig_config )
+            '''
+            raise Exception('Found Optimum!')
         return fitness
 
     
@@ -697,12 +701,12 @@ class TestBandit:
         while not self.algo.stop():
             self.iteration += 1
             
-            (self.best_position, self.best_fitness) = self.algo.run()
-            #try:
-            #    (self.best_position, self.best_fitness) = self.algo.run()
-            #except Exception as e:
-            #    print(e)
-            #    break
+            #(self.best_position, self.best_fitness) = self.algo.run()
+            try:
+                (self.best_position, self.best_fitness) = self.algo.run()
+            except Exception as e:
+                print(e)
+                break
 
             error = self.best_fitness - self.optimal_fitness
             self.fig_config['fig_title'] = ('F%d, FE=%d, error=%.2e' % 
@@ -743,11 +747,11 @@ if __name__ == '__main__':
     elif len(sys.argv) == 2:
         function_id = int(sys.argv[1])
 
-    testBandit = TestBandit( n_points = 40,
+    testBandit = TestBandit( n_points = 30,
                              dimension = 2,
                              function_id = function_id, # F1 ~ F25
                              max_evaluations = 1e4, 
-                             algo_type = 'PSO', # 'CMA', 'PSO', 'ACOR'
+                             algo_type = 'CMA', # 'CMA', 'PSO', 'ACOR'
                              verbose = True,
                              plot = 1000, 
                              fig_dir = '%s/F%d' % (fig_dir, function_id)

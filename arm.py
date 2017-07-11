@@ -136,13 +136,23 @@ class Arm:
             self.algo.draw( ax, color )
 
 
+    def population_updated_at_least_once(self):
+
+        if self.algo_type == 'ACOR':
+            if self.pulled_since_update <= self.algo.n_ants:
+                return False
+        elif self.pulled_since_update <= self.n_points:
+            return False
+        return True
+
+
 
     def mean_shifted(self):
 
-        #if self.pulled_since_update <= self.n_points:
-        #    return False
+        if not self.population_updated_at_least_once():
+            return False
 
-        if self.algo_type == 'PSO':
+        if self.algo_type == 'PSO': 
             if sum(self.algo.exploitation) <= self.n_points/2:
                 return False
 
