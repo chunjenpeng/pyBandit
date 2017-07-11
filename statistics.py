@@ -35,10 +35,11 @@ def generate_table(data_path, problem, target_FEs):
         all_errors[i] = errors[:,1]
 
     all_errors.sort(axis=0)
-    mean = np.mean(all_errors, axis=0)
-    std  = np.std(all_errors, axis=0)
-    data = np.concatenate((all_errors[[ 0, 6, 12, 18, 24]], mean[None,:], std[None,:]))
-
+    #mean = np.mean(all_errors, axis=0)
+    #std  = np.std(all_errors, axis=0)
+    mean = np.nanmean(all_errors, axis=0)
+    std  = np.nanstd(all_errors, axis=0)
+    data = np.concatenate((all_errors[[ 0, 6, 12, 18, 24]], mean[None,:], std[None,:])) 
     columns = [ 'FEs = %.0e' % f for f in target_FEs ]
     index = ['1st(Best)', '7th', '13th(Median)', '19th', '25th(Worst)', 'Mean', 'Std']
     df = pd.DataFrame( data, columns=columns, index=index )
@@ -103,12 +104,15 @@ def plot_error():
             plt.close(fig)
 
 def main():
-    data_dir = 'data/2017-05-22_ori_bandit'
+    path = 'data'
+    #orig_dir = '2017-05-22_original_algos'
+    orig_dir = '2017-07-09_original'
+    data_dir = '2017-07-09_optimize_bandit'
     target_FEs = [ 5e2, 1e3, 5e3, 1e4, 2e4 ]
     #for dimension in [2, 10, 30, 50]:
     for dimension in [2]:
         for function_id in range(1, 26):
-            function_id = 5
+            #function_id = 5
             fig = plt.figure()
             ax = fig.add_subplot(111)
             ax.set_xscale( "log", nonposx='clip' )
@@ -116,9 +120,9 @@ def main():
             #ax.set_ylim(1e-9)
 
             for algo in ['CMA', 'PSO', 'ACOR']:
+            #for algo in ['CMA', 'ACOR']:
 
-                data_dir = 'data/2017-05-22_original_algos'
-                data_path = '%s/%s' % (data_dir, algo)
+                data_path = '%s/%s/%s' % (path, orig_dir, algo)
                 problem = 'F%d_%dD' % (function_id, dimension)
                 df = generate_table(data_path, problem, target_FEs)
                 print('\n',algo, problem)
@@ -128,10 +132,11 @@ def main():
                 Y = np.array(df.loc['Mean'].values)
                 Y_error = np.array(df.loc['Std'].values)
                 ax.plot( X, Y, '-o', label=algo )
-                #ax.errorbar( X, Y, Y_error, fmt='o', label=algo )
+                #ax.errorbar( X, Y, Y_error, fmt='-o', label=algo )
 
-                data_dir = 'data/2017-05-22_ori_bandit'
-                data_path = '%s/%s' % (data_dir, algo)
+                if algo == 'PSO':
+                    continue
+                data_path = '%s/%s/%s' % (path, data_dir, algo)
                 problem = 'F%d_%dD' % (function_id, dimension)
                 df = generate_table(data_path, problem, target_FEs)
                 print(df)
@@ -149,15 +154,17 @@ def main():
                 Y = np.array(df.loc['Mean'].values)
                 Y_error = np.array(df.loc['Std'].values)
                 ax.plot( X, Y, '-o', label='Bandit+%s'%algo )
-                #ax.errorbar( X, Y, Y_error, fmt='o', label='Bandit+%s'%algo )
+                #ax.errorbar( X, Y, Y_error, fmt='-o', label='Bandit+%s'%algo )
 
             plt.legend()
             plt.title( problem )
             plt.xlabel('FEs')
             plt.ylabel('Error')
-            plt.savefig( 'plots/2017-05-23_ori_bandit/%s.png' % problem )
+            if not os.path.exists( 'plots/%s' % data_dir ):
+                os.makedirs( 'plots/%s' % data_dir )
+            plt.savefig( 'plots/%s/%s.png' % (data_dir,problem) )
             plt.close(fig)
-            input()
+            #input()
 
 
 if __name__ == '__main__':
