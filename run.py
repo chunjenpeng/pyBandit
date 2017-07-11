@@ -15,12 +15,17 @@ import pandas as pd
 
 class Algo:
     def __init__(self, n_points=None, dimension=2, function_id=0, use_bandit=False, 
-                 algo_type='CMA', max_evaluations=1e4, verbose=False, plot=0, fig_dir=None):
+                 algo_type='CMA', max_evaluations=1e4, 
+                 verbose=False, plot=0, fig_dir=None, csv_file=None):
 
         if use_bandit:
             algo_description = 'Bandit + %s' % algo_type
         else:
             algo_description = algo_type
+
+        if csv_file:
+            self.csv_file = open(csv_file, 'w')
+            self.csv_file.write('iteration,FEs,error,best_fitness,best_position\n')
 
         if n_points is None:
             if algo_type == 'PSO':
@@ -144,11 +149,20 @@ class Algo:
 
 
     def update_statistics(self):
-        self.stats['iteration'].append(self.iteration)
-        self.stats['FEs'].append(self.FE)
-        self.stats['error'].append(self.best_fitness - self.optimal_fitness)
-        self.stats['best_fitness'].append(self.best_fitness)
-        self.stats['best_position'].append(self.best_position.tolist())
+        if self.csv_file:
+            self.csv_file.write('%d,%d,%e,%f,%s\n' % 
+                                (self.iteration,
+                                 self.FE,
+                                 self.best_fitness - self.optimal_fitness,
+                                 self.best_fitness, 
+                                 str(self.best_position)) )
+
+        
+        #self.stats['iteration'].append(self.iteration)
+        #self.stats['FEs'].append(self.FE)
+        #self.stats['error'].append(self.best_fitness - self.optimal_fitness)
+        #self.stats['best_fitness'].append(self.best_fitness)
+        #self.stats['best_position'].append(self.best_position.tolist())
    
 
 
@@ -178,13 +192,14 @@ def main(args):
                 verbose         = args.verbose,
                 plot            = args.plot_after_iteration,
                 fig_dir         = args.figure_directory,
+                csv_file        = args.csv_file,
                 )
 
     while not algo.stop():
         algo.run()
 
     algo.print_status()
-    if args.csv_file: pd.DataFrame(algo.stats).to_csv(args.csv_file, index=False)
+    #if args.csv_file: pd.DataFrame(algo.stats).to_csv(args.csv_file, index=False)
     print()
 
 
