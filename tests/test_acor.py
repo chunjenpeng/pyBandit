@@ -1,2 +1,2 @@
-def test_acor()
+def test_acor():
     assert True
