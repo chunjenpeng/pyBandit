@@ -10,7 +10,7 @@
   <a href="#contributing">Request Feature</a> 
 </p>
 
-[![CircleCI](https://circleci.com/gh/chunjenpeng/pyBandit.svg?style=shield&circle-token=3dd2ed5c6aa658dda2b962f9872598a4061b9168)](https://circleci.com/gh/chunjenpeng/pyBandit)
+[![CircleCI](https://circleci.com/gh/chunjenpeng/pyBandit.svg?style=shield&circle-token=aec3a2f38a41f3fbb8815e01f599e37557e526d3)](https://circleci.com/gh/chunjenpeng/pyBandit)
 [![codecov](https://codecov.io/gh/Cinnamon/lib-table/branch/master/graph/badge.svg?token=KN45YUU644)](https://codecov.io/gh/Cinnamon/lib-table)
 [![CodeFactor](https://www.codefactor.io/repository/github/cinnamon/lib-table/badge?s=6536d686d2c75baafdc7322c3dc7439c7b7ea65c)](https://www.codefactor.io/repository/github/cinnamon/lib-table)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/75a23726fbfd4ea4bece57e257e521e5)](https://www.codacy.com?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=Cinnamon/lib-table&amp;utm_campaign=Badge_Grade)
