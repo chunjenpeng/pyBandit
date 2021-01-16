@@ -143,7 +143,7 @@ Contributions are what make the open source community such an amazing place to b
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
-If you use this research/codebase, please cite our papers.
+If you use this research/codebase, please cite our [paper](https://www.airitilibrary.com/Publication/alDetailedMesh?docid=U0001-3107201705294100).
 ```
 @article{peng2017基於子空間映射與多臂吃角子老虎機技術之實數最佳化,
   title={基於子空間映射與多臂吃角子老虎機技術之實數最佳化},
