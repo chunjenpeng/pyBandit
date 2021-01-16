@@ -5,10 +5,9 @@
 
 
 <p align="center">
-  <a href="#available-evolutionary-algorithms">Evolutionary Algorithms</a> •
-  <a href="#available-bandit-algorithms">Bandit Algorithms</a> •
-  <a href="#available-optimization-problems">Optimization Problems</a> •
-  <a href="#faq">FAQ</a>
+  <a href="#view-demo">View Demo</a> •
+  <a href="#contributing">Report Bug</a> •
+  <a href="#contributing">Request Feature</a> •
 </p>
 
 [![CircleCI](https://circleci.com/gh/Cinnamon/lib-ocr.svg?style=shield&circle-token=1b052e68bc555e127fe126783fcccea69b6619b3)](https://app.circleci.com/pipelines/github/Cinnamon/lib-ocr/)
@@ -27,6 +26,7 @@
     <li>
       <a href="#about-the-project">About The Project</a>
       <ul>
+        <li><a href="#view-demo">View Demo</a></li>
         <li><a href="#built-with">Built With</a></li>
       </ul>
     </li>
