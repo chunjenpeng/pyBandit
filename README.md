@@ -15,7 +15,7 @@
 [![CodeFactor](https://www.codefactor.io/repository/github/cinnamon/lib-table/badge?s=6536d686d2c75baafdc7322c3dc7439c7b7ea65c)](https://www.codefactor.io/repository/github/cinnamon/lib-table)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/75a23726fbfd4ea4bece57e257e521e5)](https://www.codacy.com?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=Cinnamon/lib-table&amp;utm_campaign=Badge_Grade)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
-[![version](https://img.shields.io/badge/version-v0.0.1-green)](https://github.com/chunjenpeng/pyBandit/tree/master/README.md)
+[![version](https://img.shields.io/badge/version-v0.1.0-green)](https://github.com/chunjenpeng/pyBandit/tree/master/README.md)
 
 </div>
 
