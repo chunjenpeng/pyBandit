@@ -1,2 +1,2 @@
-def test_spso.py()
-    assert False
+def test_spso():
+    assert True
